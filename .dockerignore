@@ -1,0 +1,15 @@
+.git
+.idea
+.codex
+.agent
+.agents
+AGENTS.md
+docs
+**/.DS_Store
+**/.env
+**/node_modules
+**/dist
+backend/data
+backend/logs
+backend/deploy
+frontend/npm-debug.log*

@@ -17,6 +17,7 @@ func NewRouter(svcCtx *svc.ServiceContext) *gin.Engine {
 	router.HandleMethodNotAllowed = true
 	router.Use(otelgin.Middleware(svcCtx.Config.Name))
 	router.Use(middleware.TraceID())
+	router.Use(middleware.CORS(svcCtx.Config.CORSAllowedOrigins))
 	router.Use(middleware.AccessLog(svcCtx.Logger))
 	router.Use(middleware.Response(svcCtx.Logger))
 	router.Use(middleware.Recovery(svcCtx.Logger))

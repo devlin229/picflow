@@ -10,6 +10,7 @@ const defaultConfig: ProcessConfig = {
   height: 1000,
   background: "#FFFFFF",
   format: "jpeg",
+  marginMode: "auto",
   margin: 80,
 };
 
@@ -17,7 +18,7 @@ export const builtInTemplates: ImageTemplate[] = [
   { id: "square-white", name: "白底正方形主图", type: "main", description: "1000 × 1000 · 白底 · JPG", config: defaultConfig, builtIn: true },
   { id: "square-transparent", name: "透明底商品图", type: "main", description: "1000 × 1000 · 透明 · PNG", config: { ...defaultConfig, templateId: "square-transparent", template: "透明底商品图", background: "transparent", format: "png" }, builtIn: true },
   { id: "portrait", name: "竖版商品图", type: "main", description: "4:5 · 白底 · JPG", config: { ...defaultConfig, templateId: "portrait", template: "竖版商品图", ratio: "4:5", width: 1000, height: 1250 }, builtIn: true },
-  { id: "size-standard", name: "标准尺寸图", type: "size", description: "1000 × 1000 · 蓝色标注", config: {}, builtIn: true },
+  { id: "size-standard", name: "标准尺寸图", type: "size", description: "1000 × 1000 · 蓝色标注", config: {}, sizeConfig: { canvasWidth: 1000, canvasHeight: 1000, background: "#FFFFFF", outputFormat: "jpeg", margin: 150, annotationColor: "#2563EB" }, builtIn: true },
 ];
 
 type PicFlowState = {
@@ -29,7 +30,7 @@ type PicFlowState = {
   sizeChart: ProcessedAsset | null;
   templates: ImageTemplate[];
   setAssets: (assets: ImageAsset[]) => void;
-  setTaskId: (taskId: string) => void;
+  setTaskId: (taskId: string | null) => void;
   setOutputs: (outputs: ProcessedAsset[]) => void;
   setConfig: (config: Partial<ProcessConfig>) => void;
   setAnnotation: (annotation: SizeAnnotation) => void;
@@ -50,20 +51,44 @@ export const usePicFlowStore = create<PicFlowState>()(
       annotation: null,
       sizeChart: null,
       templates: builtInTemplates,
-      setAssets: (assets) => set({ assets, taskId: null, outputs: [], sizeChart: null }),
+      setAssets: (assets) => set((state) => {
+        state.outputs.forEach((item) => URL.revokeObjectURL(item.url));
+        if (state.sizeChart) URL.revokeObjectURL(state.sizeChart.url);
+        return { assets, taskId: null, outputs: [], annotation: null, sizeChart: null };
+      }),
       setTaskId: (taskId) => set({ taskId }),
-      setOutputs: (outputs) => set({ outputs }),
+      setOutputs: (outputs) => set((state) => {
+        state.outputs.forEach((item) => URL.revokeObjectURL(item.url));
+        return { outputs };
+      }),
       setConfig: (config) => set((state) => ({ config: { ...state.config, ...config } })),
       setAnnotation: (annotation) => set({ annotation }),
-      setSizeChart: (sizeChart) => set({ sizeChart }),
+      setSizeChart: (sizeChart) => set((state) => {
+        if (state.sizeChart) URL.revokeObjectURL(state.sizeChart.url);
+        return { sizeChart };
+      }),
       addTemplate: (template) => set((state) => ({ templates: [...state.templates, template] })),
       setTemplates: (templates) => set({ templates }),
       removeTemplate: (id) => set((state) => ({ templates: state.templates.filter((item) => item.builtIn || item.id !== id) })),
-      resetTask: () => set({ assets: [], taskId: null, outputs: [], annotation: null, sizeChart: null }),
+      resetTask: () => set((state) => {
+        state.assets.forEach((item) => URL.revokeObjectURL(item.url));
+        state.outputs.forEach((item) => URL.revokeObjectURL(item.url));
+        if (state.sizeChart) URL.revokeObjectURL(state.sizeChart.url);
+        return { assets: [], taskId: null, outputs: [], annotation: null, sizeChart: null };
+      }),
     }),
     {
       name: "picflow-preferences",
-      partialize: (state) => ({ config: state.config, templates: state.templates }),
+      partialize: (state) => ({ config: state.config, templates: state.templates, taskId: state.taskId }),
+      merge: (persisted, current) => {
+        const saved = persisted as Partial<PicFlowState>;
+        return {
+          ...current,
+          ...saved,
+          config: { ...current.config, ...saved.config },
+          templates: saved.templates ?? current.templates,
+        };
+      },
     },
   ),
 );

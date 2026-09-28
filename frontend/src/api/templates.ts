@@ -1,4 +1,4 @@
-import type { ImageTemplate, ProcessConfig } from "../types";
+import type { ImageTemplate, ProcessConfig, SizeTemplateConfig } from "../types";
 import { request } from "./client";
 
 type TemplateDTO = {
@@ -12,6 +12,9 @@ type TemplateDTO = {
 
 function fromTemplateDTO(value: TemplateDTO): ImageTemplate {
   const config = value.config;
+  const canvasWidth = Number(config.canvas_width ?? 1000);
+  const canvasHeight = Number(config.canvas_height ?? 1000);
+  const knownRatio = [[1, 1], [4, 5], [3, 4], [9, 16]].find(([width, height]) => canvasWidth * height === canvasHeight * width);
   return {
     id: value.id,
     name: value.name,
@@ -21,13 +24,22 @@ function fromTemplateDTO(value: TemplateDTO): ImageTemplate {
     config: value.type === "main_image" ? {
       templateId: value.id,
       template: value.name,
-      width: Number(config.canvas_width ?? 1000),
-      height: Number(config.canvas_height ?? 1000),
-      ratio: `${Number(config.canvas_width ?? 1000)}:${Number(config.canvas_height ?? 1000)}`,
+      width: canvasWidth,
+      height: canvasHeight,
+      ratio: knownRatio ? `${knownRatio[0]}:${knownRatio[1]}` : "custom",
       background: String(config.background ?? "#FFFFFF"),
       format: String(config.output_format ?? "jpg") === "jpg" ? "jpeg" : String(config.output_format ?? "png") as ProcessConfig["format"],
+      marginMode: String(config.margin_mode ?? "fixed") as ProcessConfig["marginMode"],
       margin: Number(config.margin ?? 80),
     } : {},
+    sizeConfig: value.type === "size_chart" ? {
+      canvasWidth,
+      canvasHeight,
+      background: String(config.background ?? "#FFFFFF"),
+      outputFormat: String(config.output_format ?? "jpeg") as ProcessConfig["format"],
+      margin: Number(config.margin ?? 150),
+      annotationColor: String(config.annotation_color ?? "#2563EB"),
+    } : undefined,
   };
 }
 
@@ -51,6 +63,7 @@ export async function createTemplate(name: string, description: string, config: 
         layout_mode: "center_fit",
         keep_subject_complete: true,
         output_format: config.format,
+        margin_mode: config.marginMode,
         margin: config.margin,
       },
     }),
@@ -60,4 +73,27 @@ export async function createTemplate(name: string, description: string, config: 
 
 export function deleteTemplate(templateId: string) {
   return request<null>(`/api/templates/${encodeURIComponent(templateId)}`, { method: "DELETE" });
+}
+
+export async function createSizeTemplate(name: string, description: string, config: SizeTemplateConfig) {
+  const value = await request<TemplateDTO>("/api/templates", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name,
+      type: "size_chart",
+      description,
+      config: {
+        canvas_width: config.canvasWidth,
+        canvas_height: config.canvasHeight,
+        background: config.background,
+        output_format: config.outputFormat,
+        margin: config.margin,
+        annotation_color: config.annotationColor,
+        annotation_fields: ["width", "height", "depth"],
+        annotation_style: "default",
+      },
+    }),
+  });
+  return fromTemplateDTO(value);
 }

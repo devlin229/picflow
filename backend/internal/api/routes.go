@@ -26,9 +26,7 @@ func registerRoutes(router *gin.Engine, svcCtx *svc.ServiceContext) {
 	api.POST("/templates", handler.CreateTemplate(svcCtx))
 	api.DELETE("/templates/:templateID", handler.DeleteTemplate(svcCtx))
 
-	router.NoRoute(func(c *gin.Context) {
-		_ = c.Error(errno.NotFound("请求的接口不存在"))
-	})
+	router.NoRoute(handler.Web(svcCtx))
 	router.NoMethod(func(c *gin.Context) {
 		_ = c.Error(errno.MethodNotAllowed())
 	})

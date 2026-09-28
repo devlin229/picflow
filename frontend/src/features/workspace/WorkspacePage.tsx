@@ -1,9 +1,9 @@
-import { ImageUp, Trash2 } from "lucide-react";
+import { ImageUp, Plus, Trash2 } from "lucide-react";
 import { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { useNavigate } from "react-router-dom";
 import { errorMessage } from "../../api/client";
-import { createTask } from "../../api/tasks";
+import { createTask, deleteTask } from "../../api/tasks";
 import { createTemplate } from "../../api/templates";
 import { Button } from "../../components/ui/Button";
 import { InputField, SelectField } from "../../components/ui/Field";
@@ -18,6 +18,7 @@ export function WorkspacePage() {
   const assets = usePicFlowStore((state) => state.assets);
   const config = usePicFlowStore((state) => state.config);
   const templates = usePicFlowStore((state) => state.templates);
+  const taskId = usePicFlowStore((state) => state.taskId);
   const setAssets = usePicFlowStore((state) => state.setAssets);
   const setConfig = usePicFlowStore((state) => state.setConfig);
   const setTaskId = usePicFlowStore((state) => state.setTaskId);
@@ -30,15 +31,16 @@ export function WorkspacePage() {
     setLoading(true);
     setError("");
     try {
+      if (taskId) await deleteTask(taskId);
       const validFiles = files.filter((file) => ["image/jpeg", "image/png", "image/webp"].includes(file.type));
       const next = await Promise.all(validFiles.map(createImageAsset));
       setAssets([...assets, ...next]);
-    } catch {
-      setError("部分图片无法读取，请确认文件没有损坏后重试。");
+    } catch (requestError) {
+      setError(errorMessage(requestError));
     } finally {
       setLoading(false);
     }
-  }, [assets, setAssets]);
+  }, [assets, setAssets, taskId]);
 
   const dropzone = useDropzone({
     onDrop,
@@ -51,11 +53,39 @@ export function WorkspacePage() {
     setConfig({ ...template.config, templateId: template.id, template: template.name });
   };
 
+  const setCustomConfig = (value: Partial<typeof config>) => {
+    setConfig({ ...value, templateId: "", template: "自定义配置" });
+  };
+
+  const removeAsset = async (assetId: string) => {
+    setError("");
+    try {
+      if (taskId) await deleteTask(taskId);
+      const removed = assets.find((asset) => asset.id === assetId);
+      if (removed) URL.revokeObjectURL(removed.url);
+      setAssets(assets.filter((asset) => asset.id !== assetId));
+    } catch (requestError) {
+      setError(errorMessage(requestError));
+    }
+  };
+
+  const clearAssets = async () => {
+    setError("");
+    try {
+      if (taskId) await deleteTask(taskId);
+      assets.forEach((asset) => URL.revokeObjectURL(asset.url));
+      setAssets([]);
+    } catch (requestError) {
+      setError(errorMessage(requestError));
+    }
+  };
+
   const startProcessing = async () => {
     setSubmitting(true);
     setError("");
     try {
       const task = await createTask(assets, config);
+      setAssets(assets.map((asset, index) => ({ ...asset, id: task.assets[index]?.id ?? asset.id })));
       setTaskId(task.id);
       navigate("/processing");
     } catch (requestError) {
@@ -113,32 +143,61 @@ export function WorkspacePage() {
         <section className="panel asset-panel">
           <div className="panel-title-row">
             <h3>已上传图片（{assets.length}）</h3>
-            <Button variant="ghost" onClick={() => setAssets([])}><Trash2 size={15} />清空</Button>
+            <div className="panel-title-actions">
+              <div {...dropzone.getRootProps()}><input {...dropzone.getInputProps()} /><Button type="button" variant="secondary" disabled={loading}><Plus size={15} />继续添加</Button></div>
+              <Button variant="ghost" onClick={() => void clearAssets()}><Trash2 size={15} />清空</Button>
+            </div>
           </div>
           <div className="asset-grid">
-            {assets.map((asset) => <ImageCard key={asset.id} src={asset.url} name={asset.name} meta={`${asset.width} × ${asset.height} · ${asset.format}`} />)}
+            {assets.map((asset) => <ImageCard key={asset.id} src={asset.url} name={asset.name} meta={`${asset.width} × ${asset.height} · ${asset.format}`} onRemove={() => void removeAsset(asset.id)} />)}
           </div>
           <div className="info-strip">默认等比缩放并补边，保持商品主体完整、不拉伸。</div>
         </section>
         <aside className="panel settings-panel">
           <h3>输出设置</h3>
-          <SelectField label="处理模板" value={config.templateId} onChange={(event) => {
+          <SelectField label="处理模板" value={config.templateId || "custom"} onChange={(event) => {
             const template = templates.find((item) => item.id === event.target.value);
             if (template) applyTemplate(template);
           }}>
+            <option value="custom">自定义配置</option>
             {templates.filter((item) => item.type === "main").map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </SelectField>
           <SelectField label="输出比例" value={config.ratio} onChange={(event) => {
             const ratio = event.target.value;
+            if (ratio === "custom") {
+              setCustomConfig({ ratio });
+              return;
+            }
             const [w, h] = ratio.split(":").map(Number);
-            setConfig({ ratio, height: Math.round(config.width * h / w) });
+            setCustomConfig({ ratio, height: Math.round(config.width * h / w) });
           }}>
-            {["1:1", "4:5", "3:4", "9:16"].map((value) => <option key={value}>{value}</option>)}
+            {["1:1", "4:5", "3:4", "9:16", "custom"].map((value) => <option key={value} value={value}>{value === "custom" ? "自定义" : value}</option>)}
           </SelectField>
-          <InputField label="输出宽度" type="number" min={100} max={5000} value={config.width} onChange={(event) => setConfig({ width: Number(event.target.value) })} />
-          <InputField label="输出高度" type="number" min={100} max={5000} value={config.height} onChange={(event) => setConfig({ height: Number(event.target.value) })} />
-          <InputField label="背景" value={config.background} onChange={(event) => setConfig({ background: event.target.value })} />
-          <SelectField label="输出格式" value={config.format} onChange={(event) => setConfig({ format: event.target.value as OutputFormat })}>
+          <SelectField label="常用尺寸" value={[800, 1000, 1200].includes(config.width) && config.width === config.height ? `${config.width}` : "custom"} onChange={(event) => {
+            if (event.target.value === "custom") return;
+            const size = Number(event.target.value);
+            setCustomConfig({ width: size, height: size, ratio: "1:1" });
+          }}>
+            <option value="800">800 × 800</option><option value="1000">1000 × 1000</option><option value="1200">1200 × 1200</option><option value="custom">自定义尺寸</option>
+          </SelectField>
+          <InputField label="输出宽度" type="number" min={64} max={4096} value={config.width} onChange={(event) => setCustomConfig({ width: Number(event.target.value), ratio: "custom" })} />
+          <InputField label="输出高度" type="number" min={64} max={4096} value={config.height} onChange={(event) => setCustomConfig({ height: Number(event.target.value), ratio: "custom" })} />
+          <SelectField label="背景" value={config.background === "transparent" ? "transparent" : config.background.toUpperCase() === "#FFFFFF" ? "white" : "custom"} onChange={(event) => {
+            if (event.target.value === "white") setCustomConfig({ background: "#FFFFFF" });
+            if (event.target.value === "transparent") setCustomConfig({ background: "transparent", format: config.format === "jpeg" ? "png" : config.format });
+            if (event.target.value === "custom" && (config.background === "transparent" || config.background.toUpperCase() === "#FFFFFF")) setCustomConfig({ background: "#F3F4F6" });
+          }}>
+            <option value="white">白底</option><option value="transparent">透明底</option><option value="custom">自定义纯色</option>
+          </SelectField>
+          {config.background !== "transparent" && config.background.toUpperCase() !== "#FFFFFF" && <InputField label="自定义背景色" type="color" value={config.background} onChange={(event) => setCustomConfig({ background: event.target.value.toUpperCase() })} />}
+          <SelectField label="边距" value={config.marginMode} onChange={(event) => setCustomConfig({ marginMode: event.target.value as "auto" | "fixed" })}>
+            <option value="auto">自动边距</option><option value="fixed">固定像素</option>
+          </SelectField>
+          {config.marginMode === "fixed" && <InputField label="边距像素" type="number" min={0} max={Math.floor(Math.min(config.width, config.height) / 2) - 1} value={config.margin} onChange={(event) => setCustomConfig({ margin: Number(event.target.value) })} />}
+          <SelectField label="输出格式" value={config.format} onChange={(event) => {
+            const format = event.target.value as OutputFormat;
+            setCustomConfig({ format, background: format === "jpeg" && config.background === "transparent" ? "#FFFFFF" : config.background });
+          }}>
             <option value="jpeg">JPG</option><option value="png">PNG</option><option value="webp">WebP</option>
           </SelectField>
           <div className="settings-actions">

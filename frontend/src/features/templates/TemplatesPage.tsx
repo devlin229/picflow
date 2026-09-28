@@ -2,8 +2,9 @@ import { Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { errorMessage } from "../../api/client";
-import { createTemplate, deleteTemplate } from "../../api/templates";
+import { createSizeTemplate, createTemplate, deleteTemplate } from "../../api/templates";
 import { Button } from "../../components/ui/Button";
+import { InputField, SelectField } from "../../components/ui/Field";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { usePicFlowStore } from "../../store/usePicFlowStore";
 
@@ -16,13 +17,24 @@ export function TemplatesPage() {
   const removeTemplate = usePicFlowStore((state) => state.removeTemplate);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState("");
+  const [type, setType] = useState<"main" | "size">("main");
 
   const create = async () => {
+	if (!name.trim()) {
+	  setError("请输入模板名称");
+	  return;
+	}
 	setLoading(true);
 	setError("");
 	try {
-	  const template = await createTemplate("自定义主图模板", `${config.width} × ${config.height} · ${config.format.toUpperCase()}`, config);
+	  const template = type === "main"
+	    ? await createTemplate(name.trim(), `${config.width} × ${config.height} · ${config.format.toUpperCase()}`, config)
+	    : await createSizeTemplate(name.trim(), "1000 × 1000 · 自定义尺寸标注", { canvasWidth: 1000, canvasHeight: 1000, background: "#FFFFFF", outputFormat: "jpeg", margin: 150, annotationColor: "#2563EB" });
 	  addTemplate(template);
+	  setName("");
+	  setCreating(false);
 	} catch (requestError) {
 	  setError(errorMessage(requestError));
 	} finally {
@@ -44,14 +56,26 @@ export function TemplatesPage() {
   };
   return (
     <section className="page">
-	  <PageHeader title="模板管理" description="保存和复用常用处理方案，确保规则型输出稳定一致。" actions={<Button disabled={loading} onClick={create}><Plus size={16} />新建模板</Button>} />
+	  <PageHeader title="模板管理" description="保存和复用常用处理方案，确保规则型输出稳定一致。" actions={<Button disabled={loading} onClick={() => setCreating((value) => !value)}><Plus size={16} />新建模板</Button>} />
 	  {error && <p className="form-error" role="alert">{error}</p>}
+      {creating && <section className="panel template-create-form">
+        <InputField label="模板名称" maxLength={80} value={name} onChange={(event) => setName(event.target.value)} />
+        <SelectField label="模板类型" value={type} onChange={(event) => setType(event.target.value as "main" | "size")}><option value="main">当前主图配置</option><option value="size">尺寸图模板</option></SelectField>
+        <div className="settings-actions"><Button variant="secondary" onClick={() => setCreating(false)}>取消</Button><Button disabled={loading} onClick={() => void create()}>{loading ? "保存中…" : "保存模板"}</Button></div>
+      </section>}
       <div className="template-grid">
         {templates.map((template) => (
           <article className="panel template-card" key={template.id}>
             <span>{template.type === "size" ? "尺寸图模板" : "主图模板"}</span>
             <h2>{template.name}</h2><p>{template.description}</p>
-			<div><Button variant="ghost" disabled={loading || template.builtIn} onClick={() => void remove(template.id)}><Trash2 size={14} />删除</Button><Button variant="secondary" onClick={() => { setConfig({ ...template.config, templateId: template.id, template: template.name }); navigate(template.type === "size" ? "/size-chart" : "/"); }}>应用模板</Button></div>
+			<div><Button variant="ghost" disabled={loading || template.builtIn} onClick={() => void remove(template.id)}><Trash2 size={14} />删除</Button><Button variant="secondary" onClick={() => {
+			  if (template.type === "size") {
+			    navigate(`/size-chart?template=${encodeURIComponent(template.id)}`);
+			  } else {
+			    setConfig({ ...template.config, templateId: template.id, template: template.name });
+			    navigate("/");
+			  }
+			}}>应用模板</Button></div>
           </article>
         ))}
       </div>

@@ -8,7 +8,17 @@ export type ProcessConfig = {
   height: number;
   background: string;
   format: OutputFormat;
+  marginMode: "auto" | "fixed";
   margin: number;
+};
+
+export type SizeTemplateConfig = {
+  canvasWidth: number;
+  canvasHeight: number;
+  background: string;
+  outputFormat: OutputFormat;
+  margin: number;
+  annotationColor: string;
 };
 
 export type ImageAsset = {
@@ -50,5 +60,6 @@ export type ImageTemplate = {
   type: "main" | "size";
   description: string;
   config: Partial<ProcessConfig>;
+  sizeConfig?: SizeTemplateConfig;
   builtIn?: boolean;
 };

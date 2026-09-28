@@ -1,6 +1,7 @@
 package imageproc
 
 import (
+	"encoding/json"
 	"fmt"
 	"image"
 	"image/color"
@@ -29,6 +30,7 @@ type ProcessConfig struct {
 	LayoutMode          string `json:"layout_mode"`
 	KeepSubjectComplete bool   `json:"keep_subject_complete"`
 	OutputFormat        string `json:"output_format"`
+	MarginMode          string `json:"margin_mode"`
 	Margin              int    `json:"margin"`
 }
 
@@ -38,6 +40,16 @@ type SizeConfig struct {
 	Height float64
 	Depth  float64
 	Unit   string
+}
+
+// SizeTemplateConfig 描述尺寸图模板对画布和标注样式的控制。
+type SizeTemplateConfig struct {
+	CanvasWidth     int    `json:"canvas_width"`
+	CanvasHeight    int    `json:"canvas_height"`
+	Background      string `json:"background"`
+	OutputFormat    string `json:"output_format"`
+	Margin          int    `json:"margin"`
+	AnnotationColor string `json:"annotation_color"`
 }
 
 // Inspect 读取图片真实尺寸与格式。
@@ -71,25 +83,59 @@ func Standardize(sourcePath, outputPath string, config ProcessConfig) error {
 }
 
 // SizeChart 生成带宽、高和可选深度标注的尺寸图。
-func SizeChart(sourcePath, outputPath string, size SizeConfig) error {
+func SizeChart(sourcePath, outputPath string, size SizeConfig, template SizeTemplateConfig) error {
 	source, err := decode(sourcePath)
 	if err != nil {
 		return err
 	}
 	canvas, err := compose(source, ProcessConfig{
-		CanvasWidth: 1000, CanvasHeight: 1000, Background: "#FFFFFF",
-		LayoutMode: "center_fit", KeepSubjectComplete: true, OutputFormat: "jpeg", Margin: 150,
+		CanvasWidth: template.CanvasWidth, CanvasHeight: template.CanvasHeight, Background: template.Background,
+		LayoutMode: "center_fit", KeepSubjectComplete: true, OutputFormat: template.OutputFormat, Margin: template.Margin,
 	})
 	if err != nil {
 		return err
 	}
-	blue := color.NRGBA{R: 37, G: 99, B: 235, A: 255}
-	drawDimension(canvas, image.Pt(190, 895), image.Pt(810, 895), formatValue(size.Width, size.Unit), blue)
-	drawDimension(canvas, image.Pt(105, 200), image.Pt(105, 800), formatValue(size.Height, size.Unit), blue)
-	if size.Depth > 0 {
-		drawDimension(canvas, image.Pt(735, 215), image.Pt(890, 105), formatValue(size.Depth, size.Unit), blue)
+	lineColor, err := parseBackground(template.AnnotationColor)
+	if err != nil {
+		return err
 	}
-	return encode(outputPath, canvas, "jpeg")
+	w, h := template.CanvasWidth, template.CanvasHeight
+	drawDimension(canvas, image.Pt(w*19/100, h*895/1000), image.Pt(w*81/100, h*895/1000), formatValue(size.Width, size.Unit), lineColor)
+	drawDimension(canvas, image.Pt(w*105/1000, h/5), image.Pt(w*105/1000, h*4/5), formatValue(size.Height, size.Unit), lineColor)
+	if size.Depth > 0 {
+		drawDimension(canvas, image.Pt(w*735/1000, h*215/1000), image.Pt(w*89/100, h*105/1000), formatValue(size.Depth, size.Unit), lineColor)
+	}
+	return encode(outputPath, canvas, template.OutputFormat)
+}
+
+// NormalizeSizeTemplateConfig 解析尺寸图模板并补齐兼容默认值。
+func NormalizeSizeTemplateConfig(data []byte) (SizeTemplateConfig, error) {
+	config := SizeTemplateConfig{
+		CanvasWidth: 1000, CanvasHeight: 1000, Background: "#FFFFFF", OutputFormat: "jpeg",
+		Margin: 150, AnnotationColor: "#2563EB",
+	}
+	if err := json.Unmarshal(data, &config); err != nil {
+		return SizeTemplateConfig{}, err
+	}
+	if config.CanvasWidth < 64 || config.CanvasWidth > 4096 || config.CanvasHeight < 64 || config.CanvasHeight > 4096 {
+		return SizeTemplateConfig{}, fmt.Errorf("尺寸图画布宽高必须在 64 到 4096 像素之间")
+	}
+	if config.Margin < 0 || config.Margin*2 >= config.CanvasWidth || config.Margin*2 >= config.CanvasHeight {
+		return SizeTemplateConfig{}, fmt.Errorf("尺寸图边距不能超过画布范围")
+	}
+	if config.OutputFormat != "jpeg" && config.OutputFormat != "png" && config.OutputFormat != "webp" {
+		return SizeTemplateConfig{}, fmt.Errorf("尺寸图输出格式不受支持")
+	}
+	if config.Background == "transparent" && config.OutputFormat == "jpeg" {
+		return SizeTemplateConfig{}, fmt.Errorf("JPEG 不支持透明背景")
+	}
+	if _, err := parseBackground(config.Background); err != nil {
+		return SizeTemplateConfig{}, err
+	}
+	if _, err := parseBackground(config.AnnotationColor); err != nil || config.AnnotationColor == "transparent" {
+		return SizeTemplateConfig{}, fmt.Errorf("尺寸标注颜色必须是 #RRGGBB")
+	}
+	return config, nil
 }
 
 func decode(path string) (image.Image, error) {

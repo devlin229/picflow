@@ -14,15 +14,17 @@ const (
 
 // Task 表示一次批量图片处理任务。
 type Task struct {
-	ID           string   `gorm:"primaryKey;size:36"`
-	Type         string   `gorm:"size:32;not null"`
-	Status       string   `gorm:"size:20;not null;index"`
-	ErrorMessage string   `gorm:"type:text"`
-	ConfigJSON   string   `gorm:"type:text;not null"`
-	Assets       []Asset  `gorm:"constraint:OnDelete:CASCADE"`
-	Outputs      []Output `gorm:"constraint:OnDelete:CASCADE"`
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID              string   `gorm:"primaryKey;size:36"`
+	Type            string   `gorm:"size:32;not null"`
+	Status          string   `gorm:"size:20;not null;index"`
+	ErrorMessage    string   `gorm:"type:text"`
+	ConfigJSON      string   `gorm:"type:text;not null"`
+	TotalAssets     int      `gorm:"not null;default:0"`
+	CompletedAssets int      `gorm:"not null;default:0"`
+	Assets          []Asset  `gorm:"constraint:OnDelete:CASCADE"`
+	Outputs         []Output `gorm:"constraint:OnDelete:CASCADE"`
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // Asset 保存任务中的原始图片信息，原图文件不会被覆盖。

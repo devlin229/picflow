@@ -31,8 +31,24 @@ func (r *TaskRepository) UpdateStatus(id, status, message string) error {
 	}).Error
 }
 
+func (r *TaskRepository) UpdateProgress(id string, completed int) error {
+	return r.db.Model(&model.Task{}).Where("id = ?", id).Update("completed_assets", completed).Error
+}
+
 func (r *TaskRepository) AddOutput(output *model.Output) error {
 	return r.db.Create(output).Error
+}
+
+// DeleteStandardizedOutputs 删除任务已生成的标准化结果，并返回需要清理的文件。
+func (r *TaskRepository) DeleteStandardizedOutputs(taskID string) ([]model.Output, error) {
+	var outputs []model.Output
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("task_id = ? AND type = ?", taskID, model.OutputTypeStandardized).Find(&outputs).Error; err != nil {
+			return err
+		}
+		return tx.Where("task_id = ? AND type = ?", taskID, model.OutputTypeStandardized).Delete(&model.Output{}).Error
+	})
+	return outputs, err
 }
 
 // AddSizeResult 在一个事务中保存尺寸图输出和标注参数。

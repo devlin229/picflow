@@ -11,3 +11,5 @@ backend/logs/
 **/*_test.go
 .codex
 .agent
+AGENTS.md
+docs

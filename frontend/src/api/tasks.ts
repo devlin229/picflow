@@ -31,6 +31,8 @@ export type Task = {
   type: string;
   status: TaskStatus;
   error_message?: string;
+  total_assets: number;
+  completed_assets: number;
   assets: TaskAsset[];
   outputs: TaskOutput[];
   created_at: string;
@@ -46,6 +48,7 @@ function toServerConfig(config: ProcessConfig) {
     layout_mode: "center_fit",
     keep_subject_complete: true,
     output_format: config.format,
+    margin_mode: config.marginMode,
     margin: config.margin,
   };
 }
@@ -112,4 +115,12 @@ export async function createSizeChart(taskId: string, annotation: SizeAnnotation
 
 export function downloadTaskArchive(taskId: string) {
   return requestBlob(`/api/tasks/${encodeURIComponent(taskId)}/download.zip`);
+}
+
+export function deleteTask(taskId: string) {
+  return request<null>(`/api/tasks/${encodeURIComponent(taskId)}`, { method: "DELETE" });
+}
+
+export function deleteTaskAsset(taskId: string, assetId: string) {
+  return request<null>(`/api/tasks/${encodeURIComponent(taskId)}/assets/${encodeURIComponent(assetId)}`, { method: "DELETE" });
 }

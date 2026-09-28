@@ -89,11 +89,13 @@ func (p *Pool) process(taskID string) {
 			return
 		}
 		if err = imageproc.Standardize(asset.SourcePath, path, config); err != nil {
+			_ = os.Remove(path)
 			p.fail(taskID, fmt.Errorf("处理图片 %s 失败: %w", asset.Filename, err))
 			return
 		}
 		info, statErr := os.Stat(path)
 		if statErr != nil {
+			_ = os.Remove(path)
 			p.fail(taskID, fmt.Errorf("读取输出文件失败: %w", statErr))
 			return
 		}
@@ -107,6 +109,11 @@ func (p *Pool) process(taskID string) {
 			p.fail(taskID, fmt.Errorf("保存输出记录失败: %w", err))
 			return
 		}
+		if err = p.tasks.UpdateProgress(taskID, task.CompletedAssets+1); err != nil {
+			p.fail(taskID, fmt.Errorf("更新任务进度失败: %w", err))
+			return
+		}
+		task.CompletedAssets++
 	}
 	if err = p.tasks.UpdateStatus(taskID, model.TaskStatusSucceeded, ""); err != nil {
 		p.logger.Error("更新任务完成状态失败", slog.String("task_id", taskID), slog.Any("error", err))
@@ -115,6 +122,19 @@ func (p *Pool) process(taskID string) {
 
 func (p *Pool) fail(taskID string, err error) {
 	p.logger.Error("图片处理任务失败", slog.String("task_id", taskID), slog.Any("error", err))
+	outputs, cleanupErr := p.tasks.DeleteStandardizedOutputs(taskID)
+	if cleanupErr != nil {
+		p.logger.Error("清理失败任务输出记录失败", slog.String("task_id", taskID), slog.Any("error", cleanupErr))
+	} else {
+		for _, output := range outputs {
+			if removeErr := os.Remove(output.OutputPath); removeErr != nil && !os.IsNotExist(removeErr) {
+				p.logger.Error("清理失败任务输出文件失败", slog.String("task_id", taskID), slog.String("path", output.OutputPath), slog.Any("error", removeErr))
+			}
+		}
+	}
+	if progressErr := p.tasks.UpdateProgress(taskID, 0); progressErr != nil {
+		p.logger.Error("重置失败任务进度失败", slog.String("task_id", taskID), slog.Any("error", progressErr))
+	}
 	if updateErr := p.tasks.UpdateStatus(taskID, model.TaskStatusFailed, err.Error()); updateErr != nil {
 		p.logger.Error("更新任务失败状态失败", slog.String("task_id", taskID), slog.Any("error", updateErr))
 	}

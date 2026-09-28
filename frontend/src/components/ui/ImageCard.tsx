@@ -1,17 +1,21 @@
+import { X } from "lucide-react";
+
 type ImageCardProps = {
   src: string;
   name: string;
   meta: string;
   selected?: boolean;
   onClick?: () => void;
+  onRemove?: () => void;
 };
 
-export function ImageCard({ src, name, meta, selected, onClick }: ImageCardProps) {
+export function ImageCard({ src, name, meta, selected, onClick, onRemove }: ImageCardProps) {
   return (
-    <button type="button" className={`image-card ${selected ? "image-card--selected" : ""}`} onClick={onClick}>
+    <article className={`image-card ${selected ? "image-card--selected" : ""}`} onClick={onClick}>
+      {onRemove && <button type="button" className="image-card__remove" aria-label={`删除 ${name}`} onClick={(event) => { event.stopPropagation(); onRemove(); }}><X size={14} /></button>}
       <span className="image-card__preview"><img src={src} alt={name} /></span>
       <strong title={name}>{name}</strong>
       <small>{meta}</small>
-    </button>
+    </article>
   );
 }

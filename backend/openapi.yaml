@@ -35,7 +35,11 @@ paths:
                   maxItems: 100
                   items: {type: string, format: binary}
       responses:
-        "201": {description: 任务已进入队列}
+        "201":
+          description: 任务已进入队列
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/TaskEnvelope"}
         "400": {$ref: "#/components/responses/BadRequest"}
   /api/tasks/{taskID}:
     parameters:
@@ -43,7 +47,11 @@ paths:
     get:
       summary: 查询处理任务
       responses:
-        "200": {description: 任务详情}
+        "200":
+          description: 任务详情
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/TaskEnvelope"}
         "404": {$ref: "#/components/responses/NotFound"}
     delete:
       summary: 删除任务及其文件
@@ -72,7 +80,11 @@ paths:
           application/json:
             schema: {$ref: "#/components/schemas/SizeChartRequest"}
       responses:
-        "201": {description: 尺寸图已生成}
+        "201":
+          description: 尺寸图已生成
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/OutputEnvelope"}
   /api/tasks/{taskID}/download.zip:
     get:
       summary: 下载任务全部输出
@@ -102,7 +114,11 @@ paths:
     get:
       summary: 查询模板列表
       responses:
-        "200": {description: 模板列表}
+        "200":
+          description: 模板列表
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/TemplateListEnvelope"}
     post:
       summary: 保存自定义模板
       requestBody:
@@ -111,7 +127,11 @@ paths:
           application/json:
             schema: {$ref: "#/components/schemas/CreateTemplateRequest"}
       responses:
-        "201": {description: 模板已保存}
+        "201":
+          description: 模板已保存
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/TemplateEnvelope"}
   /api/templates/{templateID}:
     delete:
       summary: 删除自定义模板
@@ -151,7 +171,7 @@ components:
         data: {}
     ProcessConfig:
       type: object
-      required: [canvas_width, canvas_height, background, layout_mode, keep_subject_complete, output_format, margin]
+      required: [canvas_width, canvas_height, background, layout_mode, keep_subject_complete, output_format, margin_mode, margin]
       properties:
         template_id: {type: string}
         canvas_width: {type: integer, minimum: 64, maximum: 4096}
@@ -160,6 +180,7 @@ components:
         layout_mode: {type: string, const: center_fit}
         keep_subject_complete: {type: boolean, const: true}
         output_format: {type: string, enum: [jpeg, png, webp]}
+        margin_mode: {type: string, enum: [auto, fixed]}
         margin: {type: integer, minimum: 0}
     SizeChartRequest:
       type: object
@@ -179,3 +200,90 @@ components:
         type: {type: string, enum: [main_image, size_chart]}
         description: {type: string, maxLength: 255}
         config: {type: object}
+    TaskEnvelope:
+      type: object
+      required: [code, msg, data]
+      properties:
+        code: {type: integer, const: 0}
+        msg: {type: string}
+        data: {$ref: "#/components/schemas/Task"}
+    OutputEnvelope:
+      type: object
+      required: [code, msg, data]
+      properties:
+        code: {type: integer, const: 0}
+        msg: {type: string}
+        data: {$ref: "#/components/schemas/Output"}
+    TemplateEnvelope:
+      type: object
+      required: [code, msg, data]
+      properties:
+        code: {type: integer, const: 0}
+        msg: {type: string}
+        data: {$ref: "#/components/schemas/Template"}
+    TemplateListEnvelope:
+      type: object
+      required: [code, msg, data]
+      properties:
+        code: {type: integer, const: 0}
+        msg: {type: string}
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items: {$ref: "#/components/schemas/Template"}
+    Task:
+      type: object
+      required: [id, type, status, total_assets, completed_assets, assets, outputs, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        type: {type: string}
+        status: {type: string, enum: [queued, processing, succeeded, failed]}
+        error_message: {type: string}
+        total_assets: {type: integer, minimum: 0}
+        completed_assets: {type: integer, minimum: 0}
+        assets:
+          type: array
+          items: {$ref: "#/components/schemas/Asset"}
+        outputs:
+          type: array
+          items: {$ref: "#/components/schemas/Output"}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    Asset:
+      type: object
+      required: [id, task_id, filename, width, height, format, size]
+      properties:
+        id: {type: string, format: uuid}
+        task_id: {type: string, format: uuid}
+        filename: {type: string}
+        width: {type: integer}
+        height: {type: integer}
+        format: {type: string}
+        size: {type: integer, format: int64}
+    Output:
+      type: object
+      required: [id, task_id, asset_id, type, filename, width, height, format, size, download_url]
+      properties:
+        id: {type: string, format: uuid}
+        task_id: {type: string, format: uuid}
+        asset_id: {type: string, format: uuid}
+        type: {type: string, enum: [standardized, size_chart]}
+        filename: {type: string}
+        width: {type: integer}
+        height: {type: integer}
+        format: {type: string}
+        size: {type: integer, format: int64}
+        download_url: {type: string}
+    Template:
+      type: object
+      required: [id, name, type, config, built_in]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        type: {type: string, enum: [main_image, size_chart]}
+        description: {type: string}
+        config: {type: object}
+        built_in: {type: boolean}

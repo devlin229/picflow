@@ -10,21 +10,25 @@ import { usePicFlowStore } from "../../store/usePicFlowStore";
 
 export function ProcessingPage() {
   const navigate = useNavigate();
-  const assets = usePicFlowStore((state) => state.assets);
   const taskId = usePicFlowStore((state) => state.taskId);
   const setOutputs = usePicFlowStore((state) => state.setOutputs);
   const [completed, setCompleted] = useState(0);
+  const [total, setTotal] = useState(0);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!assets.length || !taskId) return;
+    if (!taskId) return;
 	const activeTaskId = taskId;
     const controller = new AbortController();
     async function run() {
       try {
-		const task = await waitForTask(activeTaskId, controller.signal);
+			const task = await waitForTask(activeTaskId, controller.signal, (current) => {
+			  setCompleted(current.completed_assets);
+			  setTotal(current.total_assets);
+			});
 		const outputs = await Promise.all(task.outputs.filter((output) => output.type === "standardized").map(toProcessedAsset));
-		setCompleted(outputs.length);
+			setCompleted(task.completed_assets);
+			setTotal(task.total_assets);
 		setOutputs(outputs);
 		window.setTimeout(() => navigate("/results", { replace: true }), 350);
       } catch (requestError) {
@@ -34,10 +38,10 @@ export function ProcessingPage() {
     }
     void run();
     return () => controller.abort();
-  }, [assets, navigate, setOutputs, taskId]);
+  }, [navigate, setOutputs, taskId]);
 
-  if (!assets.length || !taskId) return <Navigate to="/" replace />;
-  const percent = Math.round((completed / assets.length) * 100);
+  if (!taskId) return <Navigate to="/" replace />;
+	const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
 
   return (
     <section className="page">
@@ -51,10 +55,10 @@ export function ProcessingPage() {
         </> : <>
           <LoaderCircle className="processing-spinner" size={96} />
           <h2>正在批量生成标准化主图</h2>
-          <p>已完成 {completed} / {assets.length}</p>
+          <p>已完成 {completed} / {total || "-"}</p>
           <div className="progress"><span style={{ width: `${percent}%` }} /></div>
           <div className="processing-steps">
-            <span><Check />读取原图</span><span><Check />统一画布</span><span className={completed === assets.length ? "done" : "active"}>… 导出文件</span>
+            <span><Check />读取原图</span><span><Check />统一画布</span><span className={total > 0 && completed === total ? "done" : "active"}>… 导出文件</span>
           </div>
           <small>处理完成后将自动进入结果页</small>
         </>}

@@ -11,6 +11,7 @@ type ProcessConfigRequest struct {
 	LayoutMode          string `json:"layout_mode"`
 	KeepSubjectComplete bool   `json:"keep_subject_complete"`
 	OutputFormat        string `json:"output_format"`
+	MarginMode          string `json:"margin_mode"`
 	Margin              int    `json:"margin"`
 }
 
@@ -47,12 +48,14 @@ type TaskOutputResponse struct {
 }
 
 type TaskResponse struct {
-	ID           string               `json:"id"`
-	Type         string               `json:"type"`
-	Status       string               `json:"status"`
-	ErrorMessage string               `json:"error_message,omitempty"`
-	Assets       []TaskAssetResponse  `json:"assets"`
-	Outputs      []TaskOutputResponse `json:"outputs"`
-	CreatedAt    time.Time            `json:"created_at"`
-	UpdatedAt    time.Time            `json:"updated_at"`
+	ID              string               `json:"id"`
+	Type            string               `json:"type"`
+	Status          string               `json:"status"`
+	ErrorMessage    string               `json:"error_message,omitempty"`
+	TotalAssets     int                  `json:"total_assets"`
+	CompletedAssets int                  `json:"completed_assets"`
+	Assets          []TaskAssetResponse  `json:"assets"`
+	Outputs         []TaskOutputResponse `json:"outputs"`
+	CreatedAt       time.Time            `json:"created_at"`
+	UpdatedAt       time.Time            `json:"updated_at"`
 }

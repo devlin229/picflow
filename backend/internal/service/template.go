@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"picflow/backend/internal/errno"
+	"picflow/backend/internal/imageproc"
 	"picflow/backend/internal/model"
 	"picflow/backend/internal/svc"
 	"picflow/backend/internal/types"
@@ -55,6 +56,8 @@ func (s *TemplateService) Create(request types.CreateTemplateRequest) (*types.Te
 		if _, err := validateProcessConfig(processRequest); err != nil {
 			return nil, err
 		}
+	} else if _, err := imageproc.NormalizeSizeTemplateConfig(request.Config); err != nil {
+		return nil, errno.InvalidArgument(err.Error())
 	}
 	value := &model.Template{
 		ID: uuid.NewString(), Name: strings.TrimSpace(request.Name), Type: request.Type,

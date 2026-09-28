@@ -16,3 +16,7 @@ npm run dev
 ```bash
 npm run build
 ```
+
+## 容器部署
+
+生产环境不单独构建前端镜像。项目根目录的多阶段 `Dockerfile` 会先构建前端，再把 `dist/` 和 Go 后端放进同一个最终镜像，由 Go 服务同时提供静态页面、SPA fallback 和 `/api` 接口。部署命令见根目录 `README.md`。

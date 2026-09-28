@@ -9,6 +9,7 @@ PicFlow 是面向电商商品图的轻量图片处理服务。V1 提供批量上
 - Viper：`.env` 配置
 - 进程内 Worker：异步批量处理
 - 本地文件存储：原图与输出文件
+- 可选静态文件服务：统一镜像中直接托管前端 SPA
 
 主要目录：
 
@@ -46,6 +47,10 @@ curl http://localhost:8080/health/ready
 | `DATA_DIR` | `./data` | SQLite、原图和输出目录 |
 | `MAX_UPLOAD_SIZE_MB` | `20` | 单张图片大小上限 |
 | `WORKER_COUNT` | `2` | 图片处理 Worker 数量 |
+| `CORS_ALLOWED_ORIGINS` | 空 | 允许跨域访问的前端来源，多个值用逗号分隔 |
+| `WEB_DIR` | 空 | 前端构建产物目录；本地开发留空，统一镜像中为 `/app/web` |
+
+`.env` 文件是可选的；容器中可完全通过环境变量配置。生产部署统一使用项目根目录的 `Dockerfile` 和 `docker-compose.yml`，不单独构建后端镜像。
 
 ## 接口
 

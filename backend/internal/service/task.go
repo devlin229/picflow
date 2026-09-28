@@ -40,7 +40,7 @@ func (s *TaskService) Create(files []*multipart.FileHeader, request types.Proces
 	if len(files) > maxTaskAssets {
 		return nil, errno.InvalidArgument("单个任务最多上传 100 张图片")
 	}
-	config, err := validateProcessConfig(request)
+	config, err := s.resolveProcessConfig(request)
 	if err != nil {
 		return nil, err
 	}
@@ -50,6 +50,7 @@ func (s *TaskService) Create(files []*multipart.FileHeader, request types.Proces
 	}
 	task := &model.Task{
 		ID: uuid.NewString(), Type: "standardize", Status: model.TaskStatusQueued, ConfigJSON: string(configJSON),
+		TotalAssets: len(files), CompletedAssets: 0,
 	}
 	defer func() {
 		if err != nil {
@@ -104,13 +105,17 @@ func (s *TaskService) CreateSizeChart(taskID string, request types.SizeChartRequ
 		return nil, errno.Internal(err)
 	}
 	outputID := uuid.NewString()
-	path, err := s.svcCtx.Storage.OutputPath(taskID, outputID, "jpeg")
+	templateConfig, err := imageproc.NormalizeSizeTemplateConfig([]byte(template.ConfigJSON))
+	if err != nil {
+		return nil, errno.Internal(fmt.Errorf("尺寸图模板配置无效: %w", err))
+	}
+	path, err := s.svcCtx.Storage.OutputPath(taskID, outputID, templateConfig.OutputFormat)
 	if err != nil {
 		return nil, errno.Internal(err)
 	}
 	if err = imageproc.SizeChart(asset.SourcePath, path, imageproc.SizeConfig{
 		Width: request.Width, Height: request.Height, Depth: request.Depth, Unit: request.Unit,
-	}); err != nil {
+	}, templateConfig); err != nil {
 		return nil, errno.Internal(err)
 	}
 	info, err := os.Stat(path)
@@ -120,8 +125,8 @@ func (s *TaskService) CreateSizeChart(taskID string, request types.SizeChartRequ
 	}
 	output := &model.Output{
 		ID: outputID, TaskID: taskID, AssetID: asset.ID, Type: model.OutputTypeSizeChart,
-		Filename: outputFilename(asset.Filename, "size", "jpeg"), OutputPath: path,
-		Width: 1000, Height: 1000, Format: "jpeg", Size: info.Size(),
+		Filename: outputFilename(asset.Filename, "size", templateConfig.OutputFormat), OutputPath: path,
+		Width: templateConfig.CanvasWidth, Height: templateConfig.CanvasHeight, Format: templateConfig.OutputFormat, Size: info.Size(),
 	}
 	annotation := &model.SizeAnnotation{
 		ID: uuid.NewString(), TaskID: taskID, AssetID: asset.ID, OutputID: outputID,
@@ -279,7 +284,18 @@ func validateProcessConfig(request types.ProcessConfigRequest) (imageproc.Proces
 	if request.CanvasWidth < 64 || request.CanvasWidth > 4096 || request.CanvasHeight < 64 || request.CanvasHeight > 4096 {
 		return imageproc.ProcessConfig{}, errno.InvalidArgument("画布宽高必须在 64 到 4096 像素之间")
 	}
-	if request.Margin < 0 || request.Margin*2 >= request.CanvasWidth || request.Margin*2 >= request.CanvasHeight {
+	marginMode := request.MarginMode
+	if marginMode == "" {
+		marginMode = "fixed"
+	}
+	if marginMode != "fixed" && marginMode != "auto" {
+		return imageproc.ProcessConfig{}, errno.InvalidArgument("边距模式仅支持 fixed 或 auto")
+	}
+	margin := request.Margin
+	if marginMode == "auto" {
+		margin = min(request.CanvasWidth, request.CanvasHeight) * 8 / 100
+	}
+	if margin < 0 || margin*2 >= request.CanvasWidth || margin*2 >= request.CanvasHeight {
 		return imageproc.ProcessConfig{}, errno.InvalidArgument("边距不能超过画布范围")
 	}
 	if request.LayoutMode != "center_fit" || !request.KeepSubjectComplete {
@@ -294,7 +310,7 @@ func validateProcessConfig(request types.ProcessConfigRequest) (imageproc.Proces
 	config := imageproc.ProcessConfig{
 		CanvasWidth: request.CanvasWidth, CanvasHeight: request.CanvasHeight, Background: request.Background,
 		LayoutMode: request.LayoutMode, KeepSubjectComplete: request.KeepSubjectComplete,
-		OutputFormat: request.OutputFormat, Margin: request.Margin,
+		OutputFormat: request.OutputFormat, MarginMode: marginMode, Margin: margin,
 	}
 	// 通过处理器的背景色校验，避免任务进入队列后才失败。
 	if request.Background != "transparent" {
@@ -311,9 +327,29 @@ func validateProcessConfig(request types.ProcessConfigRequest) (imageproc.Proces
 	return config, nil
 }
 
+func (s *TaskService) resolveProcessConfig(request types.ProcessConfigRequest) (imageproc.ProcessConfig, error) {
+	if strings.TrimSpace(request.TemplateID) == "" {
+		return validateProcessConfig(request)
+	}
+	template, err := s.svcCtx.Templates.Get(request.TemplateID)
+	if errors.Is(err, gorm.ErrRecordNotFound) || (err == nil && template.Type != "main_image") {
+		return imageproc.ProcessConfig{}, errno.InvalidArgument("主图模板不存在")
+	}
+	if err != nil {
+		return imageproc.ProcessConfig{}, errno.Internal(err)
+	}
+	var templateRequest types.ProcessConfigRequest
+	if err = json.Unmarshal([]byte(template.ConfigJSON), &templateRequest); err != nil {
+		return imageproc.ProcessConfig{}, errno.Internal(fmt.Errorf("解析主图模板失败: %w", err))
+	}
+	templateRequest.TemplateID = template.ID
+	return validateProcessConfig(templateRequest)
+}
+
 func taskResponse(task *model.Task) *types.TaskResponse {
 	result := &types.TaskResponse{
 		ID: task.ID, Type: task.Type, Status: task.Status, ErrorMessage: task.ErrorMessage,
+		TotalAssets: task.TotalAssets, CompletedAssets: task.CompletedAssets,
 		Assets: make([]types.TaskAssetResponse, 0, len(task.Assets)), Outputs: make([]types.TaskOutputResponse, 0, len(task.Outputs)),
 		CreatedAt: task.CreatedAt, UpdatedAt: task.UpdatedAt,
 	}
