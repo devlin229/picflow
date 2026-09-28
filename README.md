@@ -73,6 +73,30 @@ docker buildx build --platform linux/amd64 --load -t picflow:amd64 .
 docker buildx build --platform linux/arm64 --load -t picflow:arm64 .
 ```
 
+## 在 GitHub 手动发布镜像
+
+仓库内置 `.github/workflows/publish-image.yml`。把代码推送到 GitHub 默认分支后：
+
+1. 打开仓库的 `Actions` 页面。
+2. 选择“构建并发布容器镜像”。
+3. 点击 `Run workflow`。
+4. 输入镜像标签，例如 `latest` 或 `v1.0.0`，再次点击 `Run workflow`。
+
+工作流会构建 `linux/amd64` 和 `linux/arm64`，并发布两个标签：
+
+```text
+ghcr.io/<仓库所有者>/<仓库名>:<输入的标签>
+ghcr.io/<仓库所有者>/<仓库名>:sha-<提交短哈希>
+```
+
+工作流通过当前仓库自动提供的 `GITHUB_TOKEN` 登录 GHCR，不需要额外配置账号密码。它需要仓库允许 Actions 具有包写入权限；配置位置为 `Settings → Actions → General → Workflow permissions`。
+
+GHCR 第一次发布的包默认是私有包。若希望其他人无需登录即可拉取，首次发布成功后进入 GitHub 个人或组织主页的 `Packages`，打开 PicFlow 包的 `Package settings`，在 `Danger Zone → Change visibility` 中改为 `Public`。公开后即可运行：
+
+```bash
+docker pull ghcr.io/<仓库所有者>/<仓库名>:latest
+```
+
 ## 验证
 
 ```bash
