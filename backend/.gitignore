@@ -1,0 +1,27 @@
+# 本地环境变量和密钥
+.env
+.env.*
+!.env.example
+
+# SOPS 解密产生的临时明文配置
+deploy/*.decrypted.env
+deploy/*.plain.env
+
+# 编译产物
+/picflow
+/bin/
+/dist/
+*.test
+*.out
+
+# 日志和编辑器文件
+*.log
+.DS_Store
+.idea/
+.vscode/
+logs
+
+**/*_test.go
+
+# PicFlow 本地数据库、原图和处理结果
+/data/

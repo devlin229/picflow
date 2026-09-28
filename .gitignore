@@ -1,0 +1,13 @@
+.DS_Store
+.idea/
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+backend/data/
+backend/.env
+backend/logs/
+**/*_test.go
+.codex
+.agent
