@@ -35,6 +35,20 @@ func (r *TaskRepository) UpdateProgress(id string, completed int) error {
 	return r.db.Model(&model.Task{}).Where("id = ?", id).Update("completed_assets", completed).Error
 }
 
+// ResetForRetry 将失败任务恢复为排队状态。
+func (r *TaskRepository) ResetForRetry(id string) error {
+	result := r.db.Model(&model.Task{}).Where("id = ? AND status = ?", id, model.TaskStatusFailed).Updates(map[string]any{
+		"status": model.TaskStatusQueued, "error_message": "", "completed_assets": 0,
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
 func (r *TaskRepository) AddOutput(output *model.Output) error {
 	return r.db.Create(output).Error
 }
@@ -51,7 +65,7 @@ func (r *TaskRepository) DeleteStandardizedOutputs(taskID string) ([]model.Outpu
 	return outputs, err
 }
 
-// AddSizeResult 在一个事务中保存尺寸图输出和标注参数。
+// AddSizeResult 在一个事务中保存规格图输出和标注参数。
 func (r *TaskRepository) AddSizeResult(output *model.Output, annotation *model.SizeAnnotation) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(output).Error; err != nil {

@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1.7
-
 FROM --platform=$BUILDPLATFORM node:24-alpine AS frontend-builder
 
 WORKDIR /src/frontend
@@ -26,7 +24,7 @@ RUN CGO_ENABLED=0 GOOS="$TARGETOS" GOARCH="$TARGETARCH" go build \
 
 FROM alpine:3.22
 
-RUN apk add --no-cache ca-certificates tzdata \
+RUN apk add --no-cache ca-certificates tzdata font-noto-cjk \
     && addgroup -S app \
     && adduser -S -G app app \
     && mkdir -p /app/web /app/data /app/logs \

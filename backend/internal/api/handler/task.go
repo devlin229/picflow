@@ -54,6 +54,17 @@ func GetTask(svcCtx *svc.ServiceContext) gin.HandlerFunc {
 	}
 }
 
+func RetryTask(svcCtx *svc.ServiceContext) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		result, err := service.NewTaskService(svcCtx).Retry(c.Param("taskID"))
+		if err != nil {
+			abort(c, err)
+			return
+		}
+		resp.OK(c, result)
+	}
+}
+
 func CreateSizeChart(svcCtx *svc.ServiceContext) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var input types.SizeChartRequest

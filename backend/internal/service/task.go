@@ -9,7 +9,9 @@ import (
 	"mime/multipart"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"picflow/backend/internal/errno"
 	"picflow/backend/internal/imageproc"
@@ -24,7 +26,7 @@ import (
 
 const maxTaskAssets = 100
 
-// TaskService 处理上传、任务查询、尺寸图和下载业务。
+// TaskService 处理上传、任务查询、规格图和下载业务。
 type TaskService struct {
 	svcCtx *svc.ServiceContext
 }
@@ -86,13 +88,42 @@ func (s *TaskService) Get(taskID string) (*types.TaskResponse, error) {
 	return taskResponse(task), nil
 }
 
+// Retry 重新把失败任务放入处理队列，不重复上传原图。
+func (s *TaskService) Retry(taskID string) (*types.TaskResponse, error) {
+	task, err := s.svcCtx.Tasks.Get(taskID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, errno.NotFound("处理任务不存在")
+	}
+	if err != nil {
+		return nil, errno.Internal(err)
+	}
+	if task.Status != model.TaskStatusFailed {
+		return nil, errno.Conflict("只有失败任务可以重试")
+	}
+	outputs, err := s.svcCtx.Tasks.DeleteStandardizedOutputs(taskID)
+	if err != nil {
+		return nil, errno.Internal(err)
+	}
+	for _, output := range outputs {
+		_ = os.Remove(output.OutputPath)
+	}
+	if err = s.svcCtx.Tasks.ResetForRetry(taskID); err != nil {
+		return nil, errno.Internal(err)
+	}
+	if err = s.svcCtx.Workers.Enqueue(taskID); err != nil {
+		_ = s.svcCtx.Tasks.UpdateStatus(taskID, model.TaskStatusFailed, "任务重新入队失败，请稍后再试")
+		return nil, errno.Unavailable(err)
+	}
+	return s.Get(taskID)
+}
+
 func (s *TaskService) CreateSizeChart(taskID string, request types.SizeChartRequest) (*types.TaskOutputResponse, error) {
 	if _, err := s.Get(taskID); err != nil {
 		return nil, err
 	}
 	template, err := s.svcCtx.Templates.Get(request.TemplateID)
 	if errors.Is(err, gorm.ErrRecordNotFound) || (err == nil && template.Type != "size_chart") {
-		return nil, errno.InvalidArgument("尺寸图模板不存在")
+		return nil, errno.InvalidArgument("规格图模板不存在")
 	}
 	if err != nil {
 		return nil, errno.Internal(err)
@@ -107,14 +138,27 @@ func (s *TaskService) CreateSizeChart(taskID string, request types.SizeChartRequ
 	outputID := uuid.NewString()
 	templateConfig, err := imageproc.NormalizeSizeTemplateConfig([]byte(template.ConfigJSON))
 	if err != nil {
-		return nil, errno.Internal(fmt.Errorf("尺寸图模板配置无效: %w", err))
+		return nil, errno.Internal(fmt.Errorf("规格图模板配置无效: %w", err))
+	}
+	specifications, err := normalizeSpecifications(request.Specifications)
+	if err != nil {
+		return nil, err
+	}
+	if err = validateTablePosition(request.TablePosition); err != nil {
+		return nil, err
+	}
+	style, err := normalizeSpecificationStyle(request.TableStyle)
+	if err != nil {
+		return nil, err
 	}
 	path, err := s.svcCtx.Storage.OutputPath(taskID, outputID, templateConfig.OutputFormat)
 	if err != nil {
 		return nil, errno.Internal(err)
 	}
-	if err = imageproc.SizeChart(asset.SourcePath, path, imageproc.SizeConfig{
-		Width: request.Width, Height: request.Height, Depth: request.Depth, Unit: request.Unit,
+	if err = imageproc.SpecificationChart(asset.SourcePath, path, imageproc.SpecificationConfig{
+		Items: specifications, TablePreset: request.TablePosition.Preset,
+		TableX: request.TablePosition.X, TableY: request.TablePosition.Y, TableWidth: request.TablePosition.Width,
+		Style: style,
 	}, templateConfig); err != nil {
 		return nil, errno.Internal(err)
 	}
@@ -125,12 +169,23 @@ func (s *TaskService) CreateSizeChart(taskID string, request types.SizeChartRequ
 	}
 	output := &model.Output{
 		ID: outputID, TaskID: taskID, AssetID: asset.ID, Type: model.OutputTypeSizeChart,
-		Filename: outputFilename(asset.Filename, "size", templateConfig.OutputFormat), OutputPath: path,
+		Filename: outputFilename(asset.Filename, "spec", templateConfig.OutputFormat), OutputPath: path,
 		Width: templateConfig.CanvasWidth, Height: templateConfig.CanvasHeight, Format: templateConfig.OutputFormat, Size: info.Size(),
+	}
+	specificationsJSON, err := json.Marshal(specifications)
+	if err != nil {
+		_ = os.Remove(path)
+		return nil, errno.Internal(err)
+	}
+	styleJSON, err := json.Marshal(style)
+	if err != nil {
+		_ = os.Remove(path)
+		return nil, errno.Internal(err)
 	}
 	annotation := &model.SizeAnnotation{
 		ID: uuid.NewString(), TaskID: taskID, AssetID: asset.ID, OutputID: outputID,
-		Width: request.Width, Height: request.Height, Depth: request.Depth, Unit: request.Unit, TemplateID: request.TemplateID,
+		SpecificationsJSON: string(specificationsJSON), StyleJSON: string(styleJSON), TablePreset: request.TablePosition.Preset,
+		TableX: request.TablePosition.X, TableY: request.TablePosition.Y, TableWidth: request.TablePosition.Width, TemplateID: request.TemplateID,
 	}
 	if err = s.svcCtx.Tasks.AddSizeResult(output, annotation); err != nil {
 		_ = os.Remove(path)
@@ -138,6 +193,93 @@ func (s *TaskService) CreateSizeChart(taskID string, request types.SizeChartRequ
 	}
 	value := outputResponse(*output)
 	return &value, nil
+}
+
+func normalizeSpecificationStyle(value types.SpecificationTableStyleRequest) (imageproc.SpecificationStyle, error) {
+	if value.Style != "simple-table" {
+		return imageproc.SpecificationStyle{}, errno.InvalidArgument("规格表格样式无效")
+	}
+	if value.BorderWidth < 1 || value.BorderWidth > 8 {
+		return imageproc.SpecificationStyle{}, errno.InvalidArgument("规格表格边框粗细必须在 1 到 8 像素之间")
+	}
+	if !isHexColor(value.BorderColor) {
+		return imageproc.SpecificationStyle{}, errno.InvalidArgument("规格表格边框色必须是 #RRGGBB")
+	}
+	if value.BackgroundColor != "transparent" && !isHexColor(value.BackgroundColor) {
+		return imageproc.SpecificationStyle{}, errno.InvalidArgument("规格表格背景色必须是 transparent 或 #RRGGBB")
+	}
+	if !isHexColor(value.TextColor) {
+		return imageproc.SpecificationStyle{}, errno.InvalidArgument("规格表格文字色必须是 #RRGGBB")
+	}
+	return imageproc.SpecificationStyle{
+		Style: value.Style, BorderWidth: value.BorderWidth, BorderColor: value.BorderColor,
+		BackgroundColor: value.BackgroundColor, TextColor: value.TextColor,
+	}, nil
+}
+
+func isHexColor(value string) bool {
+	hexValue := strings.TrimPrefix(strings.TrimSpace(value), "#")
+	if len(hexValue) != 6 {
+		return false
+	}
+	_, err := strconv.ParseUint(hexValue, 16, 32)
+	return err == nil
+}
+
+func validateTablePosition(value types.SpecificationTablePositionRequest) error {
+	switch value.Preset {
+	case "top-left", "top-right", "bottom-left", "bottom-right", "custom":
+	default:
+		return errno.InvalidArgument("规格表格位置预设无效")
+	}
+	if value.X < 0 || value.X > 1 || value.Y < 0 || value.Y > 1 {
+		return errno.InvalidArgument("规格表格位置必须在图片范围内")
+	}
+	if value.Width < 0.24 || value.Width > 0.8 {
+		return errno.InvalidArgument("规格表格宽度必须在画布宽度的 24% 到 80% 之间")
+	}
+	return nil
+}
+
+func normalizeTaskSpecification(value *types.TaskSpecificationRequest) (*imageproc.SpecificationConfig, error) {
+	if value == nil {
+		return nil, nil
+	}
+	items, err := normalizeSpecifications(value.Specifications)
+	if err != nil {
+		return nil, err
+	}
+	if err = validateTablePosition(value.TablePosition); err != nil {
+		return nil, err
+	}
+	style, err := normalizeSpecificationStyle(value.TableStyle)
+	if err != nil {
+		return nil, err
+	}
+	return &imageproc.SpecificationConfig{
+		Items: items, TablePreset: value.TablePosition.Preset,
+		TableX: value.TablePosition.X, TableY: value.TablePosition.Y, TableWidth: value.TablePosition.Width,
+		Style: style,
+	}, nil
+}
+
+func normalizeSpecifications(values []types.SpecificationRequest) ([]imageproc.Specification, error) {
+	if len(values) == 0 || len(values) > 10 {
+		return nil, errno.InvalidArgument("规格参数数量必须在 1 到 10 项之间")
+	}
+	result := make([]imageproc.Specification, 0, len(values))
+	for _, value := range values {
+		label := strings.TrimSpace(value.Label)
+		text := strings.TrimSpace(value.Value)
+		if label == "" || text == "" {
+			return nil, errno.InvalidArgument("规格名称和值不能为空")
+		}
+		if utf8.RuneCountInString(label) > 20 || utf8.RuneCountInString(text) > 40 {
+			return nil, errno.InvalidArgument("规格名称最多 20 个字符，规格值最多 40 个字符")
+		}
+		result = append(result, imageproc.Specification{Label: label, Value: text})
+	}
+	return result, nil
 }
 
 func (s *TaskService) Output(outputID string) (*model.Output, error) {
@@ -291,15 +433,21 @@ func validateProcessConfig(request types.ProcessConfigRequest) (imageproc.Proces
 	if marginMode != "fixed" && marginMode != "auto" {
 		return imageproc.ProcessConfig{}, errno.InvalidArgument("边距模式仅支持 fixed 或 auto")
 	}
+	layoutMode := request.LayoutMode
+	if layoutMode == "" || layoutMode == "center_fit" {
+		layoutMode = "contain"
+	}
+	switch layoutMode {
+	case "contain", "cover-center", "cover-top", "cover-bottom":
+	default:
+		return imageproc.ProcessConfig{}, errno.InvalidArgument("缩放裁剪模式无效")
+	}
 	margin := request.Margin
 	if marginMode == "auto" {
 		margin = min(request.CanvasWidth, request.CanvasHeight) * 8 / 100
 	}
-	if margin < 0 || margin*2 >= request.CanvasWidth || margin*2 >= request.CanvasHeight {
+	if margin < 0 || (layoutMode == "contain" && (margin*2 >= request.CanvasWidth || margin*2 >= request.CanvasHeight)) {
 		return imageproc.ProcessConfig{}, errno.InvalidArgument("边距不能超过画布范围")
-	}
-	if request.LayoutMode != "center_fit" || !request.KeepSubjectComplete {
-		return imageproc.ProcessConfig{}, errno.InvalidArgument("V1 仅支持居中、等比缩放和保持主体完整")
 	}
 	if storage.Extension(request.OutputFormat) == "" {
 		return imageproc.ProcessConfig{}, errno.InvalidArgument("输出格式仅支持 jpeg、png 和 webp")
@@ -307,11 +455,31 @@ func validateProcessConfig(request types.ProcessConfigRequest) (imageproc.Proces
 	if request.Background == "transparent" && (request.OutputFormat == "jpeg" || request.OutputFormat == "jpg") {
 		return imageproc.ProcessConfig{}, errno.InvalidArgument("JPEG 不支持透明背景")
 	}
+	quality := request.OutputQuality
+	if quality == 0 {
+		quality = 90
+	}
+	if quality < 30 || quality > 100 {
+		return imageproc.ProcessConfig{}, errno.InvalidArgument("输出质量必须在 30 到 100 之间")
+	}
+	tolerance := request.BackgroundTolerance
+	if tolerance == 0 {
+		tolerance = 12
+	}
+	if request.ReplaceSimpleBackground && (tolerance < 2 || tolerance > 30) {
+		return imageproc.ProcessConfig{}, errno.InvalidArgument("背景颜色容差必须在 2% 到 30% 之间")
+	}
 	config := imageproc.ProcessConfig{
 		CanvasWidth: request.CanvasWidth, CanvasHeight: request.CanvasHeight, Background: request.Background,
-		LayoutMode: request.LayoutMode, KeepSubjectComplete: request.KeepSubjectComplete,
+		LayoutMode: layoutMode, KeepSubjectComplete: layoutMode == "contain",
 		OutputFormat: request.OutputFormat, MarginMode: marginMode, Margin: margin,
+		OutputQuality: quality, ReplaceSimpleBackground: request.ReplaceSimpleBackground, BackgroundTolerance: tolerance,
 	}
+	specification, err := normalizeTaskSpecification(request.Specification)
+	if err != nil {
+		return imageproc.ProcessConfig{}, err
+	}
+	config.Specification = specification
 	// 通过处理器的背景色校验，避免任务进入队列后才失败。
 	if request.Background != "transparent" {
 		value := strings.TrimPrefix(request.Background, "#")
@@ -343,6 +511,7 @@ func (s *TaskService) resolveProcessConfig(request types.ProcessConfigRequest) (
 		return imageproc.ProcessConfig{}, errno.Internal(fmt.Errorf("解析主图模板失败: %w", err))
 	}
 	templateRequest.TemplateID = template.ID
+	templateRequest.Specification = request.Specification
 	return validateProcessConfig(templateRequest)
 }
 

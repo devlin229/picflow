@@ -1,4 +1,4 @@
-import type { ImageAsset, ProcessConfig, ProcessedAsset, SizeAnnotation } from "../types";
+import type { ImageAsset, ProcessConfig, ProcessedAsset, SizeAnnotation, TaskSpecification } from "../types";
 import { request, requestBlob } from "./client";
 
 export type TaskStatus = "queued" | "processing" | "succeeded" | "failed";
@@ -45,23 +45,47 @@ function toServerConfig(config: ProcessConfig) {
     canvas_width: config.width,
     canvas_height: config.height,
     background: config.background,
-    layout_mode: "center_fit",
-    keep_subject_complete: true,
+    layout_mode: config.layoutMode,
+    keep_subject_complete: config.layoutMode === "contain",
     output_format: config.format,
     margin_mode: config.marginMode,
     margin: config.margin,
+    output_quality: config.quality,
+    replace_simple_background: config.replaceSimpleBackground,
+    background_tolerance: config.backgroundTolerance,
   };
 }
 
-export async function createTask(assets: ImageAsset[], config: ProcessConfig) {
+function toServerSpecification(specification: TaskSpecification) {
+  return {
+    specifications: specification.specifications.map(({ label, value }) => ({ label, value })),
+    table_position: specification.tablePosition,
+    table_style: {
+      style: specification.tableStyle.style,
+      border_width: specification.tableStyle.borderWidth,
+      border_color: specification.tableStyle.borderColor,
+      background_color: specification.tableStyle.backgroundColor,
+      text_color: specification.tableStyle.textColor,
+    },
+  };
+}
+
+export async function createTask(assets: ImageAsset[], config: ProcessConfig, specification?: TaskSpecification) {
   const body = new FormData();
-  body.set("config", JSON.stringify(toServerConfig(config)));
+  body.set("config", JSON.stringify({
+    ...toServerConfig(config),
+    specification: specification ? toServerSpecification(specification) : undefined,
+  }));
   assets.forEach((asset) => body.append("files", asset.file, asset.name));
   return request<Task>("/api/tasks", { method: "POST", body });
 }
 
 export function getTask(taskId: string, signal?: AbortSignal) {
   return request<Task>(`/api/tasks/${encodeURIComponent(taskId)}`, { signal });
+}
+
+export function retryTask(taskId: string) {
+  return request<Task>(`/api/tasks/${encodeURIComponent(taskId)}/retry`, { method: "POST" });
 }
 
 export async function waitForTask(taskId: string, signal?: AbortSignal, onChange?: (task: Task) => void) {
@@ -103,11 +127,16 @@ export async function createSizeChart(taskId: string, annotation: SizeAnnotation
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       asset_id: annotation.sourceId,
-      width: annotation.width,
-      height: annotation.height,
-      depth: annotation.depth,
-      unit: annotation.unit,
       template_id: annotation.templateId,
+      specifications: annotation.specifications.map(({ label, value }) => ({ label, value })),
+      table_position: annotation.tablePosition,
+      table_style: {
+        style: annotation.tableStyle.style,
+        border_width: annotation.tableStyle.borderWidth,
+        border_color: annotation.tableStyle.borderColor,
+        background_color: annotation.tableStyle.backgroundColor,
+        text_color: annotation.tableStyle.textColor,
+      },
     }),
   });
   return toProcessedAsset(output);

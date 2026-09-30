@@ -18,10 +18,10 @@ func NewTemplateRepository(db *gorm.DB) *TemplateRepository {
 
 func (r *TemplateRepository) SeedBuiltIns() error {
 	values := []model.Template{
-		{ID: "square-white", Name: "白底正方形主图", Type: "main_image", Description: "1000 × 1000 · 白底 · JPG", ConfigJSON: `{"canvas_width":1000,"canvas_height":1000,"background":"#FFFFFF","layout_mode":"center_fit","keep_subject_complete":true,"output_format":"jpeg","margin_mode":"auto","margin":80}`, BuiltIn: true},
-		{ID: "square-transparent", Name: "透明底商品图", Type: "main_image", Description: "1000 × 1000 · 透明 · PNG", ConfigJSON: `{"canvas_width":1000,"canvas_height":1000,"background":"transparent","layout_mode":"center_fit","keep_subject_complete":true,"output_format":"png","margin_mode":"auto","margin":80}`, BuiltIn: true},
-		{ID: "portrait", Name: "竖版商品图", Type: "main_image", Description: "1000 × 1250 · 白底 · JPG", ConfigJSON: `{"canvas_width":1000,"canvas_height":1250,"background":"#FFFFFF","layout_mode":"center_fit","keep_subject_complete":true,"output_format":"jpeg","margin_mode":"auto","margin":80}`, BuiltIn: true},
-		{ID: "size-standard", Name: "标准尺寸图", Type: "size_chart", Description: "1000 × 1000 · 蓝色标注", ConfigJSON: `{"canvas_width":1000,"canvas_height":1000,"background":"#FFFFFF","output_format":"jpeg","margin":150,"annotation_color":"#2563EB","annotation_fields":["width","height","depth"],"unit":"cm","annotation_style":"default"}`, BuiltIn: true},
+		{ID: "square-white", Name: "白底正方形主图", Type: "main_image", Description: "1000 × 1000 · 白底 · JPG", ConfigJSON: `{"canvas_width":1000,"canvas_height":1000,"background":"#FFFFFF","layout_mode":"contain","keep_subject_complete":true,"output_format":"jpeg","margin_mode":"auto","margin":80,"output_quality":90,"replace_simple_background":false,"background_tolerance":12}`, BuiltIn: true},
+		{ID: "square-transparent", Name: "透明底商品图", Type: "main_image", Description: "1000 × 1000 · 单一背景移除 · PNG", ConfigJSON: `{"canvas_width":1000,"canvas_height":1000,"background":"transparent","layout_mode":"contain","keep_subject_complete":true,"output_format":"png","margin_mode":"auto","margin":80,"output_quality":90,"replace_simple_background":true,"background_tolerance":12}`, BuiltIn: true},
+		{ID: "portrait", Name: "竖版商品图", Type: "main_image", Description: "1000 × 1250 · 白底 · JPG", ConfigJSON: `{"canvas_width":1000,"canvas_height":1250,"background":"#FFFFFF","layout_mode":"contain","keep_subject_complete":true,"output_format":"jpeg","margin_mode":"auto","margin":80,"output_quality":90,"replace_simple_background":false,"background_tolerance":12}`, BuiltIn: true},
+		{ID: "size-standard", Name: "标准规格图", Type: "size_chart", Description: "1000 × 1000 · 商品规格表格", ConfigJSON: `{"canvas_width":1000,"canvas_height":1000,"background":"#FFFFFF","output_format":"jpeg","margin":80,"annotation_color":"#2563EB","annotation_style":"specification_table"}`, BuiltIn: true},
 	}
 	return r.db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "id"}},

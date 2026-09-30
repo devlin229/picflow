@@ -1,6 +1,6 @@
 # PicFlow 后端
 
-PicFlow 是面向电商商品图的轻量图片处理服务。V1 提供批量上传、等比缩放与补边、主图模板、尺寸图、单张下载和 ZIP 下载，不包含登录、权限、计费、AI 或 ComfyUI。
+PicFlow 是面向电商商品图的轻量图片处理服务。V0.2 提供批量上传、contain/cover 缩放裁剪、单一背景换色、格式转换、JPG 压缩、主图模板、可定位规格表格、单张下载和 ZIP 下载，不包含登录、权限、计费、AI 或 ComfyUI。
 
 ## 技术结构
 
@@ -64,11 +64,12 @@ JSON 接口统一返回：
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `POST` | `/api/tasks` | 批量上传并创建标准化任务 |
+| `POST` | `/api/tasks` | 批量上传并创建图片处理任务，可选同时绘制规格表格 |
 | `GET` | `/api/tasks/:taskID` | 查询任务状态和输出 |
+| `POST` | `/api/tasks/:taskID/retry` | 重试失败任务 |
 | `DELETE` | `/api/tasks/:taskID` | 清空任务 |
 | `DELETE` | `/api/tasks/:taskID/assets/:assetID` | 删除任务中的单张原图 |
-| `POST` | `/api/tasks/:taskID/size-charts` | 生成尺寸图 |
+| `POST` | `/api/tasks/:taskID/size-charts` | 兼容旧版的二次规格图生成接口 |
 | `GET` | `/api/tasks/:taskID/download.zip` | 下载全部结果 |
 | `GET` | `/api/outputs/:outputID/download` | 下载单张结果 |
 | `GET` | `/api/templates` | 查询模板 |

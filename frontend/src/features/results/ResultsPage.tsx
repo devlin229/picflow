@@ -1,4 +1,4 @@
-import { Download, Ruler } from "lucide-react";
+import { Download } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { errorMessage } from "../../api/client";
@@ -70,7 +70,7 @@ export function ResultsPage() {
       <section className="panel results-panel">
 		{loading && <p>正在恢复任务结果…</p>}
 		{error && <p className="form-error" role="alert">{error}</p>}
-        <div className="panel-title-row"><h3>输出图片</h3><Button variant="secondary" onClick={() => navigate("/size-chart")}><Ruler size={16} />生成尺寸图</Button></div>
+        <div className="panel-title-row"><h3>输出图片</h3></div>
         {!loading && <div className="result-grid">
           {outputs.map((output) => (
             <article key={output.id} className="result-card">

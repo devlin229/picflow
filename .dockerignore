@@ -11,5 +11,4 @@ docs
 **/dist
 backend/data
 backend/logs
-backend/deploy
 frontend/npm-debug.log*

@@ -16,6 +16,7 @@ func registerRoutes(router *gin.Engine, svcCtx *svc.ServiceContext) {
 	api := router.Group("/api")
 	api.POST("/tasks", handler.CreateTask(svcCtx))
 	api.GET("/tasks/:taskID", handler.GetTask(svcCtx))
+	api.POST("/tasks/:taskID/retry", handler.RetryTask(svcCtx))
 	api.DELETE("/tasks/:taskID", handler.DeleteTask(svcCtx))
 	api.DELETE("/tasks/:taskID/assets/:assetID", handler.DeleteTaskAsset(svcCtx))
 	api.POST("/tasks/:taskID/size-charts", handler.CreateSizeChart(svcCtx))

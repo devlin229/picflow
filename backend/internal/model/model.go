@@ -40,7 +40,7 @@ type Asset struct {
 	CreatedAt  time.Time
 }
 
-// Output 保存标准化图片或尺寸图的输出信息。
+// Output 保存标准化图片或规格图的输出信息。
 type Output struct {
 	ID         string `gorm:"primaryKey;size:36"`
 	TaskID     string `gorm:"size:36;not null;index"`
@@ -67,16 +67,23 @@ type Template struct {
 	UpdatedAt   time.Time
 }
 
-// SizeAnnotation 保存用户为尺寸图输入的真实尺寸。
+// SizeAnnotation 保存规格图使用的表格内容和位置。
 type SizeAnnotation struct {
-	ID         string  `gorm:"primaryKey;size:36"`
-	TaskID     string  `gorm:"size:36;not null;index"`
-	AssetID    string  `gorm:"size:36;not null;index"`
-	OutputID   string  `gorm:"size:36;not null;index"`
-	Width      float64 `gorm:"not null"`
-	Height     float64 `gorm:"not null"`
-	Depth      float64 `gorm:"not null;default:0"`
-	Unit       string  `gorm:"size:8;not null"`
-	TemplateID string  `gorm:"size:64;not null"`
-	CreatedAt  time.Time
+	ID                 string  `gorm:"primaryKey;size:36"`
+	TaskID             string  `gorm:"size:36;not null;index"`
+	AssetID            string  `gorm:"size:36;not null;index"`
+	OutputID           string  `gorm:"size:36;not null;index"`
+	SpecificationsJSON string  `gorm:"type:text;not null;default:'[]'"`
+	StyleJSON          string  `gorm:"type:text;not null;default:'{}'"`
+	TablePreset        string  `gorm:"size:20;not null;default:'top-right'"`
+	TableX             float64 `gorm:"not null;default:0.8"`
+	TableY             float64 `gorm:"not null;default:0.2"`
+	TableWidth         float64 `gorm:"not null;default:0.42"`
+	TemplateID         string  `gorm:"size:64;not null"`
+	// 以下字段保留用于兼容旧数据库结构，新规格图不再使用。
+	Width     float64 `gorm:"not null;default:0"`
+	Height    float64 `gorm:"not null;default:0"`
+	Depth     float64 `gorm:"not null;default:0"`
+	Unit      string  `gorm:"size:8;not null;default:''"`
+	CreatedAt time.Time
 }

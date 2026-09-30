@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: PicFlow API
-  version: 0.1.0
-  description: 电商商品图标准化、尺寸图和模板管理 API。
+  version: 0.2.0
+  description: 批量图片规则处理、规格图和模板管理 API；不包含外部 AI 能力。
 servers:
   - url: http://localhost:8080
 paths:
@@ -69,9 +69,21 @@ paths:
           schema: {type: string, format: uuid}
       responses:
         "200": {description: 删除成功}
+  /api/tasks/{taskID}/retry:
+    post:
+      summary: 重新执行失败任务
+      parameters:
+        - {$ref: "#/components/parameters/TaskID"}
+      responses:
+        "200":
+          description: 任务已重新进入队列
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/TaskEnvelope"}
+        "409": {description: 当前任务不是失败状态}
   /api/tasks/{taskID}/size-charts:
     post:
-      summary: 生成尺寸图
+      summary: 生成规格图
       parameters:
         - {$ref: "#/components/parameters/TaskID"}
       requestBody:
@@ -81,7 +93,7 @@ paths:
             schema: {$ref: "#/components/schemas/SizeChartRequest"}
       responses:
         "201":
-          description: 尺寸图已生成
+          description: 规格图已生成
           content:
             application/json:
               schema: {$ref: "#/components/schemas/OutputEnvelope"}
@@ -171,27 +183,71 @@ components:
         data: {}
     ProcessConfig:
       type: object
-      required: [canvas_width, canvas_height, background, layout_mode, keep_subject_complete, output_format, margin_mode, margin]
+      required: [canvas_width, canvas_height, background, layout_mode, keep_subject_complete, output_format, margin_mode, margin, output_quality, replace_simple_background, background_tolerance]
       properties:
         template_id: {type: string}
         canvas_width: {type: integer, minimum: 64, maximum: 4096}
         canvas_height: {type: integer, minimum: 64, maximum: 4096}
         background: {type: string, example: "#FFFFFF"}
-        layout_mode: {type: string, const: center_fit}
-        keep_subject_complete: {type: boolean, const: true}
+        layout_mode: {type: string, enum: [contain, cover-center, cover-top, cover-bottom]}
+        keep_subject_complete: {type: boolean, description: contain 模式为 true，cover 模式为 false}
         output_format: {type: string, enum: [jpeg, png, webp]}
         margin_mode: {type: string, enum: [auto, fixed]}
         margin: {type: integer, minimum: 0}
+        output_quality: {type: integer, minimum: 30, maximum: 100, description: 当前用于 JPG 有损压缩}
+        replace_simple_background: {type: boolean, description: 是否移除从边缘连通的透明或近似纯色背景}
+        background_tolerance: {type: integer, minimum: 2, maximum: 30, description: 单一背景颜色容差百分比}
+        specification:
+          allOf:
+            - {$ref: "#/components/schemas/TaskSpecification"}
+          description: 可选；在标准化后的最终画布上直接绘制规格表格
+    TaskSpecification:
+      type: object
+      required: [specifications, table_position, table_style]
+      properties:
+        specifications:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items: {$ref: "#/components/schemas/Specification"}
+        table_position: {$ref: "#/components/schemas/SpecificationTablePosition"}
+        table_style: {$ref: "#/components/schemas/SpecificationTableStyle"}
     SizeChartRequest:
       type: object
-      required: [asset_id, width, height, unit, template_id]
+      required: [asset_id, template_id, specifications, table_position, table_style]
       properties:
         asset_id: {type: string, format: uuid}
-        width: {type: number, exclusiveMinimum: 0}
-        height: {type: number, exclusiveMinimum: 0}
-        depth: {type: number, minimum: 0}
-        unit: {type: string, enum: [cm, mm]}
         template_id: {type: string}
+        specifications:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items: {$ref: "#/components/schemas/Specification"}
+        table_position: {$ref: "#/components/schemas/SpecificationTablePosition"}
+        table_style: {$ref: "#/components/schemas/SpecificationTableStyle"}
+    Specification:
+      type: object
+      required: [label, value]
+      properties:
+        label: {type: string, minLength: 1, maxLength: 20, example: 宽度}
+        value: {type: string, minLength: 1, maxLength: 40, example: 42 cm}
+    SpecificationTablePosition:
+      type: object
+      required: [preset, x, y, width]
+      properties:
+        preset: {type: string, enum: [top-left, top-right, bottom-left, bottom-right, custom]}
+        x: {type: number, minimum: 0, maximum: 1, example: 0.8}
+        y: {type: number, minimum: 0, maximum: 1, example: 0.2}
+        width: {type: number, minimum: 0.24, maximum: 0.8, example: 0.42}
+    SpecificationTableStyle:
+      type: object
+      required: [style, border_width, border_color, background_color, text_color]
+      properties:
+        style: {type: string, enum: [simple-table]}
+        border_width: {type: integer, minimum: 1, maximum: 8, example: 2}
+        border_color: {type: string, pattern: '^#[0-9A-Fa-f]{6}$', example: '#DC2626'}
+        background_color: {type: string, description: "transparent 或 #RRGGBB", example: transparent}
+        text_color: {type: string, pattern: '^#[0-9A-Fa-f]{6}$', example: '#1F2937'}
     CreateTemplateRequest:
       type: object
       required: [name, type, config]
