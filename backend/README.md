@@ -1,6 +1,27 @@
 # PicFlow 后端
 
-PicFlow 是面向电商商品图的轻量图片处理服务。V0.2 提供批量上传、contain/cover 缩放裁剪、单一背景换色、格式转换、JPG 压缩、主图模板、可定位规格表格、单张下载和 ZIP 下载，不包含登录、权限、计费、AI 或 ComfyUI。
+PicFlow 是面向电商商品图的轻量图片处理服务。V0.2 提供批量上传、contain/cover 缩放裁剪、单一背景换色、格式转换、JPG 压缩、主图模板、可定位规格表格、单张下载和 ZIP 下载，并提供可选 Qwen AI 换背景扩展。
+
+## AI 换背景
+
+在 `backend/.env` 配置以下环境变量并重启后端：
+
+```dotenv
+LLM_PROTOCOL=qwen
+LLM_API_KEY=填写你的密钥
+LLM_BASE_URL=https://maas.qianwenaiapi.com/api/v1
+LLM_MODEL=qwen-image-3.0
+LLM_TIMEOUT_SECONDS=600
+LLM_REQUESTS_PER_MINUTE=20
+```
+
+基础地址须与密钥所属平台一致；百炼工作空间使用对应的 API Host 加 `/api/v1`。密钥为空时关闭 AI 能力，原有本地处理可继续使用。Compose 部署支持同名变量。工作台选择“AI 换背景”，背景描述留空时使用所选纯色，也可填写场景描述。
+
+适配实现位于 `internal/llm`，参考 check-img 的模型接口结构，当前实现 Qwen DashScope 图片编辑。先编辑背景，再执行本地裁剪、尺寸和规格表格处理。明确的“换成黑色”等指令会同步为输出画布颜色，避免补边颜色冲突。纯色结果会进行边缘颜色初步校验，明显未换色时报告失败，不自动再次调用模型。
+
+AI 原图上限 10MB，默认每分钟 20 次。模型返回图片保存于 `data/outputs/<任务ID>/<图片ID>_ai.png`，随任务删除；同一任务重试复用已保存图片。没有成功保存返回图的图片，手动重试仍可能重新收费；新建任务也会重新请求模型。日志记录供应商请求 ID 和输入/输出图片数量，便于核对额度。模型不保证商品细节完全一致，边缘校验不代替人工验收。当前不提供透明 alpha 抠图，也尚未实现 GPT 图片适配器。
+
+接口依据：[Qwen Image 3.0 图片编辑文档](https://help.aliyun.com/zh/model-studio/qwen-image-generation-and-editing-api-reference)。
 
 ## 技术结构
 

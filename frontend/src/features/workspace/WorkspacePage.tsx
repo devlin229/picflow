@@ -11,6 +11,7 @@ import { InputField, RangeField, SelectField } from "../../components/ui/Field";
 import { ImageCard } from "../../components/ui/ImageCard";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { createImageAsset } from "../../lib/images";
+import { backgroundColorFromInstruction } from "../../lib/background";
 import { usePicFlowStore } from "../../store/usePicFlowStore";
 import type { ImageTemplate, LayoutMode, OutputFormat, SpecificationDisplayStyle, SpecificationTablePreset, SpecificationTableStyle, TaskSpecification } from "../../types";
 
@@ -137,6 +138,10 @@ export function WorkspacePage() {
   };
 
   const startProcessing = async () => {
+    if (config.aiBackground && config.background === "transparent") {
+      setError("当前 AI 换背景不支持透明底，请选择纯色背景");
+      return;
+    }
     if (specificationDisplayStyle === "simple-table" && !visibleSpecifications.length) {
       setError("请至少填写一项完整的商品规格，或将规格展示样式改为“不添加规格”");
       return;
@@ -211,7 +216,7 @@ export function WorkspacePage() {
             {assets.map((asset) => <ImageCard key={asset.id} src={asset.url} name={asset.name} meta={`${asset.width} × ${asset.height} · ${asset.format}`} selected={asset.id === previewAsset.id} onClick={() => setPreviewAssetId(asset.id)} onRemove={() => void removeAsset(asset.id)} />)}
           </div>
           <div className="processing-preview">
-            <div className="panel-title-row"><h3>预览</h3><span>输出 {config.width} × {config.height}</span></div>
+            <div className="panel-title-row"><h3>预览</h3><span>{config.aiBackground ? "原图构图 · " : ""}输出 {config.width} × {config.height}</span></div>
             <div className="processing-preview__stage"><ProcessingPreview asset={previewAsset} config={config} specification={taskSpecification} onSpecificationPositionChange={setSpecificationPosition} /></div>
           </div>
         </section>
@@ -273,13 +278,26 @@ export function WorkspacePage() {
           </SelectField>
           {config.format === "jpeg" && <RangeField label={`JPG 压缩质量（${config.quality}%）`} min={30} max={100} value={config.quality} onValueChange={(quality) => setCustomConfig({ quality })} />}
           <div className="settings-section-heading">
-            <div><strong>原背景处理</strong><span>不调用 AI，仅处理透明或近似纯色背景</span></div>
+            <div><strong>原背景处理</strong></div>
           </div>
+          <SelectField label="背景处理方式" value={config.aiBackground ? "ai" : "local"} onChange={(event) => setCustomConfig({ aiBackground: event.target.value === "ai", replaceSimpleBackground: false })}>
+            <option value="local">本地处理</option><option value="ai">AI 换背景</option>
+          </SelectField>
+          {config.aiBackground && <>
+            <InputField label="场景描述或换色指令（可选）" maxLength={1000} placeholder="例如：换成黑色；留空使用上方背景颜色" value={config.aiBackgroundPrompt} onChange={(event) => {
+              const prompt = event.target.value;
+              const color = backgroundColorFromInstruction(prompt);
+              setCustomConfig({ aiBackgroundPrompt: prompt, ...(color ? { background: color } : {}) });
+            }} />
+            <small className="field-note">纯色换背景请在上方选择颜色，或输入“换成黑色”等明确指令。图片发送至模型服务并按张计费，实际效果处理后查看。当前不支持透明底。</small>
+          </>}
+          {!config.aiBackground && <>
           <label className="check-field">
             <input type="checkbox" checked={config.replaceSimpleBackground} onChange={(event) => setCustomConfig({ replaceSimpleBackground: event.target.checked })} />
             <span><strong>替换原图的单一背景</strong><small>从图片边缘识别连通的近似纯色区域，并替换为上方选择的背景。</small></span>
           </label>
           {config.replaceSimpleBackground && <RangeField label={`颜色容差（${config.backgroundTolerance}%）`} help="背景有轻微阴影时可提高；商品颜色接近背景时应降低。" min={2} max={30} value={config.backgroundTolerance} onValueChange={(backgroundTolerance) => setCustomConfig({ backgroundTolerance })} />}
+          </>}
           <SelectField label="规格展示样式" value={specificationDisplayStyle} onChange={(event) => setSpecificationDisplayStyle(event.target.value as SpecificationDisplayStyle)}>
             <option value="none">不添加规格</option>
             <option value="simple-table">参数表格</option>

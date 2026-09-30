@@ -16,6 +16,8 @@ export type ProcessConfig = {
   quality: number;
   replaceSimpleBackground: boolean;
   backgroundTolerance: number;
+  aiBackground: boolean;
+  aiBackgroundPrompt: string;
 };
 
 export type SizeTemplateConfig = {

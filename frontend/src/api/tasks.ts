@@ -53,6 +53,8 @@ function toServerConfig(config: ProcessConfig) {
     output_quality: config.quality,
     replace_simple_background: config.replaceSimpleBackground,
     background_tolerance: config.backgroundTolerance,
+    ai_background: config.aiBackground,
+    ai_background_prompt: config.aiBackgroundPrompt,
   };
 }
 

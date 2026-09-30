@@ -35,6 +35,8 @@ function fromTemplateDTO(value: TemplateDTO): ImageTemplate {
       quality: Number(config.output_quality ?? 90),
       replaceSimpleBackground: Boolean(config.replace_simple_background ?? false),
       backgroundTolerance: Number(config.background_tolerance ?? 12),
+      aiBackground: Boolean(config.ai_background ?? false),
+      aiBackgroundPrompt: String(config.ai_background_prompt ?? ""),
     } : {},
     sizeConfig: value.type === "size_chart" ? {
       canvasWidth,
@@ -72,6 +74,8 @@ export async function createTemplate(name: string, description: string, config: 
         output_quality: config.quality,
         replace_simple_background: config.replaceSimpleBackground,
         background_tolerance: config.backgroundTolerance,
+        ai_background: config.aiBackground,
+        ai_background_prompt: config.aiBackgroundPrompt,
       },
     }),
   });

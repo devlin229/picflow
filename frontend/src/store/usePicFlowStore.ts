@@ -16,6 +16,8 @@ const defaultConfig: ProcessConfig = {
   quality: 90,
   replaceSimpleBackground: false,
   backgroundTolerance: 12,
+  aiBackground: false,
+  aiBackgroundPrompt: "",
 };
 
 export const builtInTemplates: ImageTemplate[] = [

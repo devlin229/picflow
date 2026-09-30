@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: PicFlow API
   version: 0.2.0
-  description: 批量图片规则处理、规格图和模板管理 API；不包含外部 AI 能力。
+  description: 批量图片规则处理、规格图和模板管理 API，包含可选 Qwen AI 换背景扩展。
 servers:
   - url: http://localhost:8080
 paths:
@@ -197,6 +197,8 @@ components:
         output_quality: {type: integer, minimum: 30, maximum: 100, description: 当前用于 JPG 有损压缩}
         replace_simple_background: {type: boolean, description: 是否移除从边缘连通的透明或近似纯色背景}
         background_tolerance: {type: integer, minimum: 2, maximum: 30, description: 单一背景颜色容差百分比}
+        ai_background: {type: boolean, default: false, description: 调用后端配置的图片编辑模型移除原背景并换色或生成场景，与本地背景替换互斥，不支持透明底}
+        ai_background_prompt: {type: string, maxLength: 1000, description: AI 场景描述或换色指令，留空使用 background 指定的纯色；明确换色指令同步画布颜色并进行背景边缘初步校验；AI 原图不得超过 10MB}
         specification:
           allOf:
             - {$ref: "#/components/schemas/TaskSpecification"}

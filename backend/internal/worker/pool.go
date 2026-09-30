@@ -1,8 +1,10 @@
 package worker
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -10,6 +12,7 @@ import (
 	"sync"
 
 	"picflow/backend/internal/imageproc"
+	"picflow/backend/internal/llm"
 	"picflow/backend/internal/model"
 	"picflow/backend/internal/repository"
 	"picflow/backend/internal/storage"
@@ -25,10 +28,11 @@ type Pool struct {
 	storage *storage.Storage
 	logger  *slog.Logger
 	wg      sync.WaitGroup
+	editor  llm.ImageEditor
 }
 
-func New(workers int, tasks *repository.TaskRepository, files *storage.Storage, logger *slog.Logger) *Pool {
-	return &Pool{queue: make(chan string, 100), workers: workers, tasks: tasks, storage: files, logger: logger}
+func New(workers int, tasks *repository.TaskRepository, files *storage.Storage, logger *slog.Logger, editor llm.ImageEditor) *Pool {
+	return &Pool{queue: make(chan string, 100), workers: workers, tasks: tasks, storage: files, logger: logger, editor: editor}
 }
 
 func (p *Pool) Start() {
@@ -88,7 +92,7 @@ func (p *Pool) process(taskID string) {
 			p.fail(taskID, pathErr)
 			return
 		}
-		if err = imageproc.Standardize(asset.SourcePath, path, config); err != nil {
+		if err = p.processAsset(asset, path, config); err != nil {
 			_ = os.Remove(path)
 			p.fail(taskID, fmt.Errorf("处理图片 %s 失败: %w", asset.Filename, err))
 			return
@@ -118,6 +122,65 @@ func (p *Pool) process(taskID string) {
 	if err = p.tasks.UpdateStatus(taskID, model.TaskStatusSucceeded, ""); err != nil {
 		p.logger.Error("更新任务完成状态失败", slog.String("task_id", taskID), slog.Any("error", err))
 	}
+}
+
+func (p *Pool) processAsset(asset model.Asset, outputPath string, config imageproc.ProcessConfig) error {
+	if !config.AIBackground {
+		return imageproc.Standardize(asset.SourcePath, outputPath, config)
+	}
+	if p.editor == nil {
+		return fmt.Errorf("AI 换背景尚未配置")
+	}
+	config.Background, config.AIBackgroundPrompt = imageproc.ResolveAIBackground(config.Background, config.AIBackgroundPrompt)
+	path, err := p.storage.AIResultPath(asset.TaskID, asset.ID)
+	if err != nil {
+		return err
+	}
+	if _, statErr := os.Stat(path); statErr == nil {
+		p.logger.Info("复用已保存的 AI 图片，不再次请求模型", slog.String("task_id", asset.TaskID), slog.String("asset_id", asset.ID))
+		return p.standardizeAIResult(path, outputPath, config)
+	} else if !os.IsNotExist(statErr) {
+		return fmt.Errorf("读取已保存 AI 图片失败")
+	}
+	file, err := os.Open(asset.SourcePath)
+	if err != nil {
+		return fmt.Errorf("读取 AI 原图失败")
+	}
+	data, err := io.ReadAll(io.LimitReader(file, (10<<20)+1))
+	_ = file.Close()
+	if err != nil || len(data) > 10<<20 {
+		return fmt.Errorf("读取 AI 原图失败或图片超过 10MB")
+	}
+	background := "将图1中商品以外的全部背景区域（包括四周和空隙）替换为均匀的纯色 " + config.Background + "。不得保留原来的背景色。不要渐变、阴影或场景元素。商品自身的白色或其他颜色必须保留。"
+	if config.AIBackgroundPrompt != "" {
+		background = "将图1的原背景替换为以下场景：" + config.AIBackgroundPrompt
+	}
+	prompt := background + " 编辑图1，不是复制原图。只改变背景，商品主体、形状、材质、颜色及配件保持不变；商品完整呈现，不裁切、不变形。不要添加新的文字、边框或水印。"
+	p.logger.Info("开始 AI 换背景", slog.String("task_id", asset.TaskID), slog.String("asset_id", asset.ID), slog.String("background", config.Background), slog.Bool("scene_background", config.AIBackgroundPrompt != ""))
+	result, err := p.editor.Edit(context.Background(), llm.ImageInput{Data: data, MIME: "image/" + asset.Format, Prompt: prompt})
+	if err != nil {
+		return err
+	}
+	path, err = p.storage.SaveAIResult(asset.TaskID, asset.ID, result)
+	if err != nil {
+		return err
+	}
+	p.logger.Info("AI 原始返回图已保存", slog.String("task_id", asset.TaskID), slog.String("asset_id", asset.ID), slog.String("path", path))
+	return p.standardizeAIResult(path, outputPath, config)
+}
+
+func (p *Pool) standardizeAIResult(path, outputPath string, config imageproc.ProcessConfig) error {
+	width, height, _, err := imageproc.Inspect(path)
+	if err != nil || int64(width)*int64(height) > 50_000_000 {
+		return fmt.Errorf("AI 返回的图片格式或分辨率无效")
+	}
+	if config.AIBackgroundPrompt == "" {
+		if err = imageproc.ValidateAIBackground(path, config.Background); err != nil {
+			return err
+		}
+	}
+	config.ReplaceSimpleBackground = false
+	return imageproc.Standardize(path, outputPath, config)
 }
 
 func (p *Pool) fail(taskID string, err error) {

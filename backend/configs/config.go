@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"picflow/backend/internal/llm"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -24,6 +25,7 @@ type Config struct {
 	WebDir             string
 	MaxUploadSize      int64
 	WorkerCount        int
+	LLM                llm.Config
 }
 
 // Address 返回 HTTP 服务监听地址。
@@ -49,6 +51,11 @@ func Load() (*Config, error) {
 	v.SetDefault("DATA_DIR", "./data")
 	v.SetDefault("MAX_UPLOAD_SIZE_MB", 20)
 	v.SetDefault("WORKER_COUNT", 2)
+	v.SetDefault("LLM_PROTOCOL", "qwen")
+	v.SetDefault("LLM_BASE_URL", "https://maas.qianwenaiapi.com/api/v1")
+	v.SetDefault("LLM_MODEL", "qwen-image-3.0")
+	v.SetDefault("LLM_TIMEOUT_SECONDS", 600)
+	v.SetDefault("LLM_REQUESTS_PER_MINUTE", 20)
 
 	if err := v.ReadInConfig(); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("读取 .env 失败: %w", err)
@@ -79,6 +86,7 @@ func Load() (*Config, error) {
 		WebDir:             webDir,
 		MaxUploadSize:      v.GetInt64("MAX_UPLOAD_SIZE_MB") * megabyte,
 		WorkerCount:        v.GetInt("WORKER_COUNT"),
+		LLM:                llm.Config{Protocol: strings.TrimSpace(v.GetString("LLM_PROTOCOL")), APIKey: strings.TrimSpace(v.GetString("LLM_API_KEY")), BaseURL: strings.TrimSpace(v.GetString("LLM_BASE_URL")), Model: strings.TrimSpace(v.GetString("LLM_MODEL")), TimeoutSeconds: v.GetInt("LLM_TIMEOUT_SECONDS"), RequestsPerMinute: v.GetInt("LLM_REQUESTS_PER_MINUTE")},
 	}
 	if err = cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("校验配置失败: %w", err)

@@ -76,6 +76,47 @@ func (s *Storage) OutputPath(taskID, outputID, format string) (string, error) {
 	return filepath.Join(dir, outputID+ext), nil
 }
 
+// AIResultPath 返回供应商原始返回图片的缓存路径，随任务删除。
+func (s *Storage) AIResultPath(taskID, assetID string) (string, error) {
+	return s.OutputPath(taskID, assetID+"_ai", "png")
+}
+
+// SaveAIResult 原子保存供应商图片，用于诊断及任务重试复用。
+func (s *Storage) SaveAIResult(taskID, assetID string, data []byte) (string, error) {
+	path, err := s.AIResultPath(taskID, assetID)
+	if err != nil {
+		return "", err
+	}
+	temp, err := s.SaveIntermediate(taskID, data)
+	if err != nil {
+		return "", err
+	}
+	if err = os.Rename(temp, path); err != nil {
+		_ = os.Remove(temp)
+		return "", fmt.Errorf("保存 AI 原始结果失败")
+	}
+	return path, nil
+}
+
+// SaveIntermediate 保存处理中的临时图片，调用方负责处理后删除。
+func (s *Storage) SaveIntermediate(taskID string, data []byte) (string, error) {
+	dir := filepath.Join(s.root, "outputs", taskID)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("创建中间文件目录失败: %w", err)
+	}
+	file, err := os.CreateTemp(dir, "ai-*.tmp")
+	if err != nil {
+		return "", fmt.Errorf("创建 AI 中间文件失败: %w", err)
+	}
+	_, writeErr := file.Write(data)
+	closeErr := file.Close()
+	if writeErr != nil || closeErr != nil {
+		_ = os.Remove(file.Name())
+		return "", fmt.Errorf("保存 AI 中间文件失败")
+	}
+	return file.Name(), nil
+}
+
 // RemoveTask 删除任务对应的原图和输出文件。
 func (s *Storage) RemoveTask(taskID string) error {
 	if err := os.RemoveAll(filepath.Join(s.root, "uploads", taskID)); err != nil {

@@ -5,6 +5,7 @@ import (
 
 	"picflow/backend/configs"
 	"picflow/backend/internal/database"
+	"picflow/backend/internal/llm"
 	"picflow/backend/internal/repository"
 	"picflow/backend/internal/storage"
 	"picflow/backend/internal/worker"
@@ -14,16 +15,21 @@ import (
 
 // ServiceContext 保存业务处理器共享的依赖。
 type ServiceContext struct {
-	Config    *configs.Config
-	DB        *gorm.DB
-	Logger    *slog.Logger
-	Tasks     *repository.TaskRepository
-	Templates *repository.TemplateRepository
-	Storage   *storage.Storage
-	Workers   *worker.Pool
+	Config      *configs.Config
+	DB          *gorm.DB
+	Logger      *slog.Logger
+	Tasks       *repository.TaskRepository
+	Templates   *repository.TemplateRepository
+	Storage     *storage.Storage
+	Workers     *worker.Pool
+	ImageEditor llm.ImageEditor
 }
 
 func NewServiceContext(cfg *configs.Config, logger *slog.Logger) (*ServiceContext, error) {
+	editor, err := llm.NewImageEditor(cfg.LLM)
+	if err != nil {
+		return nil, err
+	}
 	db, err := database.Open(cfg.DatabasePath(), cfg.OTLPTraceEndpoint != "")
 	if err != nil {
 		return nil, err
@@ -43,11 +49,11 @@ func NewServiceContext(cfg *configs.Config, logger *slog.Logger) (*ServiceContex
 		_ = database.Close(db)
 		return nil, err
 	}
-	workers := worker.New(cfg.WorkerCount, tasks, files, logger)
+	workers := worker.New(cfg.WorkerCount, tasks, files, logger, editor)
 	workers.Start()
 	return &ServiceContext{
 		Config: cfg, DB: db, Logger: logger, Tasks: tasks,
-		Templates: templates, Storage: files, Workers: workers,
+		Templates: templates, Storage: files, Workers: workers, ImageEditor: editor,
 	}, nil
 }
 

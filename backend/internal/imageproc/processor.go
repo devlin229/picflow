@@ -36,6 +36,8 @@ type ProcessConfig struct {
 	OutputQuality           int                  `json:"output_quality"`
 	ReplaceSimpleBackground bool                 `json:"replace_simple_background"`
 	BackgroundTolerance     int                  `json:"background_tolerance"`
+	AIBackground            bool                 `json:"ai_background"`
+	AIBackgroundPrompt      string               `json:"ai_background_prompt"`
 	Specification           *SpecificationConfig `json:"specification,omitempty"`
 }
 

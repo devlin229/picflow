@@ -46,6 +46,9 @@ func (s *TaskService) Create(files []*multipart.FileHeader, request types.Proces
 	if err != nil {
 		return nil, err
 	}
+	if config.AIBackground && s.svcCtx.ImageEditor == nil {
+		return nil, errno.Unavailable(fmt.Errorf("AI 换背景尚未配置，请在后端设置 LLM_API_KEY"))
+	}
 	configJSON, err := json.Marshal(config)
 	if err != nil {
 		return nil, errno.Internal(err)
@@ -63,6 +66,10 @@ func (s *TaskService) Create(files []*multipart.FileHeader, request types.Proces
 		asset, saveErr := s.saveAsset(task.ID, header)
 		if saveErr != nil {
 			err = saveErr
+			return nil, err
+		}
+		if config.AIBackground && asset.Size > 10<<20 {
+			err = errno.InvalidArgument("AI 换背景单张原图不能超过 10MB")
 			return nil, err
 		}
 		task.Assets = append(task.Assets, *asset)
@@ -423,6 +430,9 @@ func (s *TaskService) saveAsset(taskID string, header *multipart.FileHeader) (*m
 }
 
 func validateProcessConfig(request types.ProcessConfigRequest) (imageproc.ProcessConfig, error) {
+	if request.AIBackground {
+		request.Background, request.AIBackgroundPrompt = imageproc.ResolveAIBackground(request.Background, request.AIBackgroundPrompt)
+	}
 	if request.CanvasWidth < 64 || request.CanvasWidth > 4096 || request.CanvasHeight < 64 || request.CanvasHeight > 4096 {
 		return imageproc.ProcessConfig{}, errno.InvalidArgument("画布宽高必须在 64 到 4096 像素之间")
 	}
@@ -474,6 +484,18 @@ func validateProcessConfig(request types.ProcessConfigRequest) (imageproc.Proces
 		LayoutMode: layoutMode, KeepSubjectComplete: layoutMode == "contain",
 		OutputFormat: request.OutputFormat, MarginMode: marginMode, Margin: margin,
 		OutputQuality: quality, ReplaceSimpleBackground: request.ReplaceSimpleBackground, BackgroundTolerance: tolerance,
+		AIBackground: request.AIBackground, AIBackgroundPrompt: strings.TrimSpace(request.AIBackgroundPrompt),
+	}
+	if request.AIBackground {
+		if request.Background == "transparent" {
+			return imageproc.ProcessConfig{}, errno.InvalidArgument("当前 AI 换背景不支持透明底")
+		}
+		if request.ReplaceSimpleBackground {
+			return imageproc.ProcessConfig{}, errno.InvalidArgument("AI 换背景不能同时开启本地背景替换")
+		}
+		if utf8.RuneCountInString(config.AIBackgroundPrompt) > 1000 {
+			return imageproc.ProcessConfig{}, errno.InvalidArgument("背景描述不能超过 1000 字")
+		}
 	}
 	specification, err := normalizeTaskSpecification(request.Specification)
 	if err != nil {
