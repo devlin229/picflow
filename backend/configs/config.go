@@ -52,8 +52,7 @@ func Load() (*Config, error) {
 	v.SetDefault("MAX_UPLOAD_SIZE_MB", 20)
 	v.SetDefault("WORKER_COUNT", 2)
 	v.SetDefault("LLM_PROTOCOL", "qwen")
-	v.SetDefault("LLM_BASE_URL", "https://maas.qianwenaiapi.com/api/v1")
-	v.SetDefault("LLM_MODEL", "qwen-image-3.0")
+	// 基础地址和模型留空时，由适配器按 LLM_PROTOCOL 选择默认值。
 	v.SetDefault("LLM_TIMEOUT_SECONDS", 600)
 	v.SetDefault("LLM_REQUESTS_PER_MINUTE", 20)
 

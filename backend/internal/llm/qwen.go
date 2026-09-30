@@ -11,59 +11,23 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 )
 
 const maxImageBytes = 10 << 20
 
 type qwenEditor struct {
-	config      Config
-	client      *http.Client
-	mu          sync.Mutex
-	nextRequest time.Time
-}
-
-// NewImageEditor 根据协议创建图片编辑适配器；未配置密钥时关闭 AI 能力。
-func NewImageEditor(config Config) (ImageEditor, error) {
-	if strings.TrimSpace(config.APIKey) == "" {
-		return nil, nil
-	}
-	if config.Protocol != "qwen" {
-		return nil, fmt.Errorf("LLM_PROTOCOL 当前仅支持 qwen")
-	}
-	u, err := url.Parse(config.BaseURL)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-		return nil, fmt.Errorf("LLM_BASE_URL 必须是有效 HTTPS 基础地址")
-	}
-	if strings.TrimSpace(config.Model) == "" || config.TimeoutSeconds < 1 || config.TimeoutSeconds > 1800 || config.RequestsPerMinute < 1 || config.RequestsPerMinute > 600 {
-		return nil, fmt.Errorf("LLM 模型、超时或速率配置无效")
-	}
-	return &qwenEditor{config: config, client: &http.Client{Timeout: time.Duration(config.TimeoutSeconds) * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}}, nil
+	*imageClient
 }
 
 func (q *qwenEditor) Edit(ctx context.Context, input ImageInput) ([]byte, error) {
-	if len(input.Data) == 0 || len(input.Data) > maxImageBytes {
-		return nil, fmt.Errorf("AI 输入图片必须在 10MB 以内")
-	}
-	if input.MIME != "image/jpeg" && input.MIME != "image/png" && input.MIME != "image/webp" {
-		return nil, fmt.Errorf("AI 输入图片格式不受支持")
+	if err := validateImageInput(input); err != nil {
+		return nil, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(q.config.TimeoutSeconds)*time.Second)
 	defer cancel()
-	q.mu.Lock()
-	start := time.Now()
-	if q.nextRequest.After(start) {
-		start = q.nextRequest
-	}
-	q.nextRequest = start.Add(time.Minute / time.Duration(q.config.RequestsPerMinute))
-	q.mu.Unlock()
-	timer := time.NewTimer(time.Until(start))
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return nil, fmt.Errorf("AI 请求等待超时")
-	case <-timer.C:
+	if err := q.wait(ctx); err != nil {
+		return nil, err
 	}
 	payload := struct {
 		Model string `json:"model"`

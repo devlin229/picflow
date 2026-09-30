@@ -1,6 +1,6 @@
 # PicFlow 后端
 
-PicFlow 是面向电商商品图的轻量图片处理服务。V0.2 提供批量上传、contain/cover 缩放裁剪、单一背景换色、格式转换、JPG 压缩、主图模板、可定位规格表格、单张下载和 ZIP 下载，并提供可选 Qwen AI 换背景扩展。
+PicFlow 是面向电商商品图的轻量图片处理服务。V0.2 提供批量上传、contain/cover 缩放裁剪、单一背景换色、格式转换、JPG 压缩、主图模板、可定位规格表格、单张下载和 ZIP 下载，并提供可选 Qwen / OpenAI AI 换背景扩展。
 
 ## AI 换背景
 
@@ -17,11 +17,24 @@ LLM_REQUESTS_PER_MINUTE=20
 
 基础地址须与密钥所属平台一致；百炼工作空间使用对应的 API Host 加 `/api/v1`。密钥为空时关闭 AI 能力，原有本地处理可继续使用。Compose 部署支持同名变量。工作台选择“AI 换背景”，背景描述留空时使用所选纯色，也可填写场景描述。
 
-适配实现位于 `internal/llm`，参考 check-img 的模型接口结构，当前实现 Qwen DashScope 图片编辑。先编辑背景，再执行本地裁剪、尺寸和规格表格处理。明确的“换成黑色”等指令会同步为输出画布颜色，避免补边颜色冲突。纯色结果会进行边缘颜色初步校验，明显未换色时报告失败，不自动再次调用模型。
+切换为 OpenAI 时，在 `backend/.env` 同时替换以下四项，然后重启后端（本地可重新运行根目录 `./dev.sh`）：
 
-AI 原图上限 10MB，默认每分钟 20 次。模型返回图片保存于 `data/outputs/<任务ID>/<图片ID>_ai.png`，随任务删除；同一任务重试复用已保存图片。没有成功保存返回图的图片，手动重试仍可能重新收费；新建任务也会重新请求模型。日志记录供应商请求 ID 和输入/输出图片数量，便于核对额度。模型不保证商品细节完全一致，边缘校验不代替人工验收。当前不提供透明 alpha 抠图，也尚未实现 GPT 图片适配器。
+```dotenv
+LLM_PROTOCOL=openai
+LLM_API_KEY=填写你的OpenAI密钥
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_MODEL=gpt-image-2.5-sunburst
+```
+
+`LLM_BASE_URL` 和 `LLM_MODEL` 留空时按协议选用默认值：Qwen 使用上述地址和模型；OpenAI 使用上述 OpenAI 地址和模型。支持按账户权限填写其他 GPT Image 模型名（例如 `gpt-image-2.5-flare`、`gpt-image-2`、`gpt-image-1.5`）。OpenAI 适配器使用 `/images/edits` 上传原图，固定只生成一张、`quality=medium`、自动尺寸、PNG，后续裁剪和 JPG 压缩仍由本地处理。GPT Image 1/1.5 显式设置高输入保真，较新型号不发送该参数。OpenAI 兼容服务需支持该图片编辑接口并返回 `data[].b64_json`，不使用聊天接口或自动回退其他模型。切换供应商后请新建任务；旧任务重试仍优先复用已保存图片。
+
+适配实现位于 `internal/llm`，参考 check-img 的模型接口结构，实现 Qwen DashScope 和 OpenAI Images 图片编辑，共享限流、超时及输入校验。先编辑背景，再执行本地裁剪、尺寸和规格表格处理。明确的“换成黑色”等指令会同步为输出画布颜色，避免补边颜色冲突。纯色结果会进行边缘颜色初步校验，明显未换色时报告失败，不自动再次调用模型。
+
+AI 原图上限 10MB，默认每分钟 20 次。模型返回图片保存于 `data/outputs/<任务ID>/<图片ID>_ai.png`，随任务删除；同一任务重试复用已保存图片。没有成功保存返回图的图片，手动重试仍可能重新收费；新建任务也会重新请求模型。日志记录供应商请求 ID，Qwen 记录输入/输出图片数量，OpenAI 记录输入/输出 token 用量，便于核对额度；这些日志不等于最终账单。模型不保证商品细节完全一致，边缘校验不代替人工验收。当前不提供透明 alpha 抠图。
 
 接口依据：[Qwen Image 3.0 图片编辑文档](https://help.aliyun.com/zh/model-studio/qwen-image-generation-and-editing-api-reference)。
+
+OpenAI 接口依据：[官方图片编辑文档](https://developers.openai.com/api/docs/guides/image-generation)。
 
 ## 技术结构
 
