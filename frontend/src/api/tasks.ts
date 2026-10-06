@@ -39,6 +39,16 @@ export type Task = {
   updated_at: string;
 };
 
+export type TaskHistory = { items: Task[]; total: number; page: number; page_size: number };
+
+export function listTasks(page: number, signal?: AbortSignal) {
+  return request<TaskHistory>(`/api/tasks?page=${page}&page_size=12`, { signal });
+}
+
+export function downloadOutput(url: string) {
+  return requestBlob(url);
+}
+
 function toServerConfig(config: ProcessConfig) {
   return {
     template_id: config.templateId,
@@ -51,10 +61,8 @@ function toServerConfig(config: ProcessConfig) {
     margin_mode: config.marginMode,
     margin: config.margin,
     output_quality: config.quality,
-    replace_simple_background: config.replaceSimpleBackground,
-    background_tolerance: config.backgroundTolerance,
-    ai_background: config.aiBackground,
-    ai_background_prompt: config.aiBackgroundPrompt,
+    ai_background: Boolean(config.aiBackgroundPrompt.trim()),
+    ai_background_prompt: config.aiBackgroundPrompt.trim(),
   };
 }
 

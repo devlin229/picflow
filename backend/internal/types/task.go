@@ -2,23 +2,35 @@ package types
 
 import "time"
 
+// TaskListRequest 是历史结果分页查询参数。
+type TaskListRequest struct {
+	Page     int `form:"page"`
+	PageSize int `form:"page_size"`
+}
+
+// TaskListResponse 返回历史任务及分页信息，不包含图片二进制数据。
+type TaskListResponse struct {
+	Items    []*TaskResponse `json:"items"`
+	Total    int64           `json:"total"`
+	Page     int             `json:"page"`
+	PageSize int             `json:"page_size"`
+}
+
 // ProcessConfigRequest 是前端提交的标准化处理配置。
 type ProcessConfigRequest struct {
-	TemplateID              string                    `json:"template_id"`
-	CanvasWidth             int                       `json:"canvas_width"`
-	CanvasHeight            int                       `json:"canvas_height"`
-	Background              string                    `json:"background"`
-	LayoutMode              string                    `json:"layout_mode"`
-	KeepSubjectComplete     bool                      `json:"keep_subject_complete"`
-	OutputFormat            string                    `json:"output_format"`
-	MarginMode              string                    `json:"margin_mode"`
-	Margin                  int                       `json:"margin"`
-	OutputQuality           int                       `json:"output_quality"`
-	ReplaceSimpleBackground bool                      `json:"replace_simple_background"`
-	BackgroundTolerance     int                       `json:"background_tolerance"`
-	AIBackground            bool                      `json:"ai_background"`
-	AIBackgroundPrompt      string                    `json:"ai_background_prompt"`
-	Specification           *TaskSpecificationRequest `json:"specification,omitempty"`
+	TemplateID          string                    `json:"template_id"`
+	CanvasWidth         int                       `json:"canvas_width"`
+	CanvasHeight        int                       `json:"canvas_height"`
+	Background          string                    `json:"background"`
+	LayoutMode          string                    `json:"layout_mode"`
+	KeepSubjectComplete bool                      `json:"keep_subject_complete"`
+	OutputFormat        string                    `json:"output_format"`
+	MarginMode          string                    `json:"margin_mode"`
+	Margin              int                       `json:"margin"`
+	OutputQuality       int                       `json:"output_quality"`
+	AIBackground        bool                      `json:"ai_background"`
+	AIBackgroundPrompt  string                    `json:"ai_background_prompt"`
+	Specification       *TaskSpecificationRequest `json:"specification,omitempty"`
 }
 
 type SpecificationRequest struct {

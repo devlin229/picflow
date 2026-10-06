@@ -14,8 +14,6 @@ export type ProcessConfig = {
   marginMode: "auto" | "fixed";
   margin: number;
   quality: number;
-  replaceSimpleBackground: boolean;
-  backgroundTolerance: number;
   aiBackground: boolean;
   aiBackgroundPrompt: string;
 };

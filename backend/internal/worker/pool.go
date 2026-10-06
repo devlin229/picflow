@@ -125,13 +125,12 @@ func (p *Pool) process(taskID string) {
 }
 
 func (p *Pool) processAsset(asset model.Asset, outputPath string, config imageproc.ProcessConfig) error {
-	if !config.AIBackground {
+	if !config.AIBackground || strings.TrimSpace(config.AIBackgroundPrompt) == "" {
 		return imageproc.Standardize(asset.SourcePath, outputPath, config)
 	}
 	if p.editor == nil {
-		return fmt.Errorf("AI 换背景尚未配置")
+		return fmt.Errorf("AI 图片处理尚未配置")
 	}
-	config.Background, config.AIBackgroundPrompt = imageproc.ResolveAIBackground(config.Background, config.AIBackgroundPrompt)
 	path, err := p.storage.AIResultPath(asset.TaskID, asset.ID)
 	if err != nil {
 		return err
@@ -142,22 +141,29 @@ func (p *Pool) processAsset(asset model.Asset, outputPath string, config imagepr
 	} else if !os.IsNotExist(statErr) {
 		return fmt.Errorf("读取已保存 AI 图片失败")
 	}
-	file, err := os.Open(asset.SourcePath)
+	// 先完成用户配置的本地处理；使用无损中间图，避免发送前就进行 JPG 压缩。
+	inputPath, err := p.storage.OutputPath(asset.TaskID, uuid.NewString()+"_before_ai", "png")
 	if err != nil {
-		return fmt.Errorf("读取 AI 原图失败")
+		return err
+	}
+	defer os.Remove(inputPath)
+	inputConfig := config
+	inputConfig.OutputFormat = "png"
+	if err = imageproc.Standardize(asset.SourcePath, inputPath, inputConfig); err != nil {
+		return fmt.Errorf("AI 前本地图片处理失败: %w", err)
+	}
+	file, err := os.Open(inputPath)
+	if err != nil {
+		return fmt.Errorf("读取本地处理后的 AI 输入图失败")
 	}
 	data, err := io.ReadAll(io.LimitReader(file, (10<<20)+1))
 	_ = file.Close()
 	if err != nil || len(data) > 10<<20 {
-		return fmt.Errorf("读取 AI 原图失败或图片超过 10MB")
+		return fmt.Errorf("本地处理后的 AI 输入图读取失败或超过 10MB，请减小输出尺寸")
 	}
-	background := "将图1中商品以外的全部背景区域（包括四周和空隙）替换为均匀的纯色 " + config.Background + "。不得保留原来的背景色。不要渐变、阴影或场景元素。商品自身的白色或其他颜色必须保留。"
-	if config.AIBackgroundPrompt != "" {
-		background = "将图1的原背景替换为以下场景：" + config.AIBackgroundPrompt
-	}
-	prompt := background + " 编辑图1，不是复制原图。只改变背景，商品主体、形状、材质、颜色及配件保持不变；商品完整呈现，不裁切、不变形。不要添加新的文字、边框或水印。"
-	p.logger.Info("开始 AI 换背景", slog.String("task_id", asset.TaskID), slog.String("asset_id", asset.ID), slog.String("background", config.Background), slog.Bool("scene_background", config.AIBackgroundPrompt != ""))
-	result, err := p.editor.Edit(context.Background(), llm.ImageInput{Data: data, MIME: "image/" + asset.Format, Prompt: prompt})
+	prompt := "请根据以下用户指令编辑图1：\n" + config.AIBackgroundPrompt + "\n图1已完成本地尺寸、裁剪、补边和规格表格处理。保持画布尺寸与比例；除用户明确要求修改的内容外，保留商品细节、构图、文字、标志和规格表格。不要额外添加边框、留白或水印。用户要求更换背景时，应处理包括画布补边在内的背景区域。"
+	p.logger.Info("开始 AI 图片处理", slog.String("task_id", asset.TaskID), slog.String("asset_id", asset.ID))
+	result, err := p.editor.Edit(context.Background(), llm.ImageInput{Data: data, MIME: "image/png", Prompt: prompt})
 	if err != nil {
 		return err
 	}
@@ -174,12 +180,12 @@ func (p *Pool) standardizeAIResult(path, outputPath string, config imageproc.Pro
 	if err != nil || int64(width)*int64(height) > 50_000_000 {
 		return fmt.Errorf("AI 返回的图片格式或分辨率无效")
 	}
-	if config.AIBackgroundPrompt == "" {
-		if err = imageproc.ValidateAIBackground(path, config.Background); err != nil {
-			return err
-		}
-	}
-	config.ReplaceSimpleBackground = false
+	// AI 已处理整张画布，不能再次应用用户边距或绘制表格，否则会新增补边和重复表格。
+	// 模型尺寸不一致时等比填满并居中裁切，保持目标尺寸且不拉伸、不新增画布边缘。
+	config.Margin = 0
+	config.MarginMode = "fixed"
+	config.LayoutMode = "cover-center"
+	config.Specification = nil
 	return imageproc.Standardize(path, outputPath, config)
 }
 

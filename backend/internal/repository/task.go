@@ -25,6 +25,24 @@ func (r *TaskRepository) Get(id string) (*model.Task, error) {
 	return &task, err
 }
 
+// List 按创建时间倒序分页读取历史任务，删除后自动收敛到最后一页。
+func (r *TaskRepository) List(page, pageSize int) ([]model.Task, int64, int, error) {
+	var total int64
+	if err := r.db.Model(&model.Task{}).Count(&total).Error; err != nil {
+		return nil, 0, page, err
+	}
+	lastPage := int((total + int64(pageSize) - 1) / int64(pageSize))
+	if lastPage < 1 {
+		lastPage = 1
+	}
+	if page > lastPage {
+		page = lastPage
+	}
+	var tasks []model.Task
+	err := r.db.Preload("Assets").Preload("Outputs").Order("created_at DESC, id DESC").Limit(pageSize).Offset((page - 1) * pageSize).Find(&tasks).Error
+	return tasks, total, page, err
+}
+
 func (r *TaskRepository) UpdateStatus(id, status, message string) error {
 	return r.db.Model(&model.Task{}).Where("id = ?", id).Updates(map[string]any{
 		"status": status, "error_message": message,

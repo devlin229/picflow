@@ -15,6 +15,7 @@ func registerRoutes(router *gin.Engine, svcCtx *svc.ServiceContext) {
 
 	api := router.Group("/api")
 	api.POST("/tasks", handler.CreateTask(svcCtx))
+	api.GET("/tasks", handler.ListTasks(svcCtx))
 	api.GET("/tasks/:taskID", handler.GetTask(svcCtx))
 	api.POST("/tasks/:taskID/retry", handler.RetryTask(svcCtx))
 	api.DELETE("/tasks/:taskID", handler.DeleteTask(svcCtx))

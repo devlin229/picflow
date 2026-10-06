@@ -3,8 +3,8 @@ import { persist } from "zustand/middleware";
 import type { ImageAsset, ImageTemplate, ProcessConfig, ProcessedAsset, SizeAnnotation, SpecificationDisplayStyle, SpecificationItem, SpecificationStylePreset, SpecificationTablePosition, SpecificationTableStyle } from "../types";
 
 const defaultConfig: ProcessConfig = {
-  templateId: "square-white",
-  template: "白底正方形主图",
+  templateId: "",
+  template: "自定义配置",
   ratio: "1:1",
   width: 1000,
   height: 1000,
@@ -14,18 +14,9 @@ const defaultConfig: ProcessConfig = {
   marginMode: "auto",
   margin: 80,
   quality: 90,
-  replaceSimpleBackground: false,
-  backgroundTolerance: 12,
   aiBackground: false,
   aiBackgroundPrompt: "",
 };
-
-export const builtInTemplates: ImageTemplate[] = [
-  { id: "square-white", name: "白底正方形主图", type: "main", description: "1000 × 1000 · 白底 · JPG", config: defaultConfig, builtIn: true },
-  { id: "square-transparent", name: "透明底商品图", type: "main", description: "1000 × 1000 · 单一背景移除 · PNG", config: { ...defaultConfig, templateId: "square-transparent", template: "透明底商品图", background: "transparent", format: "png", replaceSimpleBackground: true }, builtIn: true },
-  { id: "portrait", name: "竖版商品图", type: "main", description: "4:5 · 白底 · JPG", config: { ...defaultConfig, templateId: "portrait", template: "竖版商品图", ratio: "4:5", width: 1000, height: 1250 }, builtIn: true },
-  { id: "size-standard", name: "标准规格图", type: "size", description: "1000 × 1000 · 商品规格表格", config: {}, sizeConfig: { canvasWidth: 1000, canvasHeight: 1000, background: "#FFFFFF", outputFormat: "jpeg", margin: 80, annotationColor: "#2563EB" }, builtIn: true },
-];
 
 export const defaultSpecificationDraft: SpecificationItem[] = [
   { id: "width", label: "宽度", value: "42 cm" },
@@ -94,7 +85,7 @@ export const usePicFlowStore = create<PicFlowState>()(
       specificationPositionDraft: defaultSpecificationPosition,
       annotation: null,
       sizeChart: null,
-      templates: builtInTemplates,
+      templates: [],
       setAssets: (assets) => set((state) => {
         state.outputs.forEach((item) => URL.revokeObjectURL(item.url));
         if (state.sizeChart) URL.revokeObjectURL(state.sizeChart.url);
@@ -105,7 +96,10 @@ export const usePicFlowStore = create<PicFlowState>()(
         state.outputs.forEach((item) => URL.revokeObjectURL(item.url));
         return { outputs };
       }),
-      setConfig: (config) => set((state) => ({ config: { ...state.config, ...config } })),
+      setConfig: (config) => set((state) => {
+        const next = { ...state.config, ...config };
+        return { config: { ...next, aiBackground: Boolean(next.aiBackgroundPrompt.trim()) } };
+      }),
       setSpecificationDraft: (specificationDraft) => set({ specificationDraft }),
       setSpecificationStyleDraft: (specificationStyleDraft) => set({ specificationStyleDraft }),
       setSpecificationDisplayStyle: (specificationDisplayStyle) => set({ specificationDisplayStyle }),
@@ -127,12 +121,13 @@ export const usePicFlowStore = create<PicFlowState>()(
     }),
     {
       name: "picflow-preferences",
+      version: 2,
+      // 工作台草稿仅保留在内存中；迁移时丢弃旧版缓存的处理和规格设置。
+      migrate: (persisted) => {
+        const saved = persisted as Partial<PicFlowState>;
+        return { templates: saved.templates?.filter((item) => !item.builtIn), taskId: saved.taskId };
+      },
       partialize: (state) => ({
-        config: state.config,
-        specificationDraft: state.specificationDraft,
-        specificationStyleDraft: state.specificationStyleDraft,
-        specificationDisplayStyle: state.specificationDisplayStyle,
-        specificationPositionDraft: state.specificationPositionDraft,
         templates: state.templates,
         taskId: state.taskId,
       }),
@@ -140,16 +135,8 @@ export const usePicFlowStore = create<PicFlowState>()(
         const saved = persisted as Partial<PicFlowState>;
         return {
           ...current,
-          ...saved,
-          config: { ...current.config, ...saved.config },
-          specificationDraft: saved.specificationDraft ?? current.specificationDraft,
-          specificationStyleDraft: saved.specificationStyleDraft && "borderWidth" in saved.specificationStyleDraft
-            ? { ...current.specificationStyleDraft, ...saved.specificationStyleDraft }
-            : current.specificationStyleDraft,
-          specificationDisplayStyle: saved.specificationDisplayStyle
-            ?? ((saved as Partial<PicFlowState> & { includeSpecification?: boolean }).includeSpecification ? "simple-table" : "none"),
-          specificationPositionDraft: { ...current.specificationPositionDraft, ...saved.specificationPositionDraft },
-          templates: saved.templates ?? current.templates,
+          templates: saved.templates?.filter((item) => !item.builtIn) ?? current.templates,
+          taskId: saved.taskId ?? current.taskId,
         };
       },
     },

@@ -41,7 +41,7 @@ func NewServiceContext(cfg *configs.Config, logger *slog.Logger) (*ServiceContex
 	}
 	tasks := repository.NewTaskRepository(db)
 	templates := repository.NewTemplateRepository(db)
-	if err = templates.SeedBuiltIns(); err != nil {
+	if err = templates.RemoveLegacyBuiltIns(); err != nil {
 		_ = database.Close(db)
 		return nil, err
 	}

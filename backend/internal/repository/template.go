@@ -4,7 +4,6 @@ import (
 	"picflow/backend/internal/model"
 
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // TemplateRepository 负责处理模板的持久化。
@@ -16,17 +15,9 @@ func NewTemplateRepository(db *gorm.DB) *TemplateRepository {
 	return &TemplateRepository{db: db}
 }
 
-func (r *TemplateRepository) SeedBuiltIns() error {
-	values := []model.Template{
-		{ID: "square-white", Name: "白底正方形主图", Type: "main_image", Description: "1000 × 1000 · 白底 · JPG", ConfigJSON: `{"canvas_width":1000,"canvas_height":1000,"background":"#FFFFFF","layout_mode":"contain","keep_subject_complete":true,"output_format":"jpeg","margin_mode":"auto","margin":80,"output_quality":90,"replace_simple_background":false,"background_tolerance":12}`, BuiltIn: true},
-		{ID: "square-transparent", Name: "透明底商品图", Type: "main_image", Description: "1000 × 1000 · 单一背景移除 · PNG", ConfigJSON: `{"canvas_width":1000,"canvas_height":1000,"background":"transparent","layout_mode":"contain","keep_subject_complete":true,"output_format":"png","margin_mode":"auto","margin":80,"output_quality":90,"replace_simple_background":true,"background_tolerance":12}`, BuiltIn: true},
-		{ID: "portrait", Name: "竖版商品图", Type: "main_image", Description: "1000 × 1250 · 白底 · JPG", ConfigJSON: `{"canvas_width":1000,"canvas_height":1250,"background":"#FFFFFF","layout_mode":"contain","keep_subject_complete":true,"output_format":"jpeg","margin_mode":"auto","margin":80,"output_quality":90,"replace_simple_background":false,"background_tolerance":12}`, BuiltIn: true},
-		{ID: "size-standard", Name: "标准规格图", Type: "size_chart", Description: "1000 × 1000 · 商品规格表格", ConfigJSON: `{"canvas_width":1000,"canvas_height":1000,"background":"#FFFFFF","output_format":"jpeg","margin":80,"annotation_color":"#2563EB","annotation_style":"specification_table"}`, BuiltIn: true},
-	}
-	return r.db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"name", "type", "description", "config_json", "built_in", "updated_at"}),
-	}).Create(&values).Error
+// RemoveLegacyBuiltIns 清理旧版四个预置模板，不影响用户自建模板和任务记录。
+func (r *TemplateRepository) RemoveLegacyBuiltIns() error {
+	return r.db.Where("built_in = ? AND id IN ?", true, []string{"square-white", "square-transparent", "portrait", "size-standard"}).Delete(&model.Template{}).Error
 }
 
 func (r *TemplateRepository) List() ([]model.Template, error) {

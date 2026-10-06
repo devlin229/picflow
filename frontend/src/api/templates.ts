@@ -33,9 +33,7 @@ function fromTemplateDTO(value: TemplateDTO): ImageTemplate {
       marginMode: String(config.margin_mode ?? "fixed") as ProcessConfig["marginMode"],
       margin: Number(config.margin ?? 80),
       quality: Number(config.output_quality ?? 90),
-      replaceSimpleBackground: Boolean(config.replace_simple_background ?? false),
-      backgroundTolerance: Number(config.background_tolerance ?? 12),
-      aiBackground: Boolean(config.ai_background ?? false),
+      aiBackground: Boolean(String(config.ai_background_prompt ?? "").trim()),
       aiBackgroundPrompt: String(config.ai_background_prompt ?? ""),
     } : {},
     sizeConfig: value.type === "size_chart" ? {
@@ -72,10 +70,8 @@ export async function createTemplate(name: string, description: string, config: 
         margin_mode: config.marginMode,
         margin: config.margin,
         output_quality: config.quality,
-        replace_simple_background: config.replaceSimpleBackground,
-        background_tolerance: config.backgroundTolerance,
-        ai_background: config.aiBackground,
-        ai_background_prompt: config.aiBackgroundPrompt,
+        ai_background: Boolean(config.aiBackgroundPrompt.trim()),
+        ai_background_prompt: config.aiBackgroundPrompt.trim(),
       },
     }),
   });

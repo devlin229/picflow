@@ -19,42 +19,6 @@ function parseColor(value: string) {
   return [Number.parseInt(hex.slice(0, 2), 16), Number.parseInt(hex.slice(2, 4), 16), Number.parseInt(hex.slice(4, 6), 16), 255] as const;
 }
 
-function removeConnectedBackground(context: CanvasRenderingContext2D, width: number, height: number, tolerance: number) {
-  const image = context.getImageData(0, 0, width, height);
-  const data = image.data;
-  const corners = [[0, 0], [width - 1, 0], [0, height - 1], [width - 1, height - 1]] as const;
-  const colors = corners.map(([x, y]) => {
-    const offset = (y * width + x) * 4;
-    return [data[offset], data[offset + 1], data[offset + 2]] as const;
-  });
-  const channelTolerance = Math.round(tolerance / 100 * 255);
-  const score = colors.map((candidate) => colors.filter((color) => color.every((channel, index) => Math.abs(channel - candidate[index]) <= channelTolerance)).length);
-  const reference = colors[score.indexOf(Math.max(...score))];
-  const visited = new Uint8Array(width * height);
-  const queue: number[] = [];
-  const enqueue = (x: number, y: number) => {
-    const index = y * width + x;
-    if (visited[index]) return;
-    visited[index] = 1;
-    const offset = index * 4;
-    const matches = data[offset + 3] < 250 || reference.every((channel, colorIndex) => Math.abs(data[offset + colorIndex] - channel) <= channelTolerance);
-    if (matches) queue.push(index);
-  };
-  for (let x = 0; x < width; x += 1) { enqueue(x, 0); enqueue(x, height - 1); }
-  for (let y = 1; y < height - 1; y += 1) { enqueue(0, y); enqueue(width - 1, y); }
-  for (let cursor = 0; cursor < queue.length; cursor += 1) {
-    const index = queue[cursor];
-    data[index * 4 + 3] = 0;
-    const x = index % width;
-    const y = Math.floor(index / width);
-    if (x > 0) enqueue(x - 1, y);
-    if (x + 1 < width) enqueue(x + 1, y);
-    if (y > 0) enqueue(x, y - 1);
-    if (y + 1 < height) enqueue(x, y + 1);
-  }
-  context.putImageData(image, 0, 0);
-}
-
 export function ProcessingPreview({ asset, config, specification, onSpecificationPositionChange }: ProcessingPreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
@@ -73,7 +37,7 @@ export function ProcessingPreview({ asset, config, specification, onSpecificatio
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const context = canvas.getContext("2d", { willReadFrequently: config.replaceSimpleBackground });
+    const context = canvas.getContext("2d");
     if (!context) return;
     const image = new Image();
     image.onload = () => {
@@ -102,19 +66,7 @@ export function ProcessingPreview({ asset, config, specification, onSpecificatio
       if (config.layoutMode === "cover-top") y = 0;
       if (config.layoutMode === "cover-bottom") y = previewHeight - drawHeight;
 
-      if (!config.replaceSimpleBackground) {
-        context.drawImage(image, x, y, drawWidth, drawHeight);
-        return;
-      }
-      const sourceCanvas = document.createElement("canvas");
-      const sampleScale = Math.min(1, 1600 / Math.max(image.naturalWidth, image.naturalHeight));
-      sourceCanvas.width = Math.max(1, Math.round(image.naturalWidth * sampleScale));
-      sourceCanvas.height = Math.max(1, Math.round(image.naturalHeight * sampleScale));
-      const sourceContext = sourceCanvas.getContext("2d", { willReadFrequently: true });
-      if (!sourceContext) return;
-      sourceContext.drawImage(image, 0, 0, sourceCanvas.width, sourceCanvas.height);
-      removeConnectedBackground(sourceContext, sourceCanvas.width, sourceCanvas.height, config.backgroundTolerance);
-      context.drawImage(sourceCanvas, x, y, drawWidth, drawHeight);
+      context.drawImage(image, x, y, drawWidth, drawHeight);
     };
     image.src = asset.url;
     return () => { image.onload = null; };

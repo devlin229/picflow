@@ -54,6 +54,23 @@ func GetTask(svcCtx *svc.ServiceContext) gin.HandlerFunc {
 	}
 }
 
+// ListTasks 返回历史结果分页列表。
+func ListTasks(svcCtx *svc.ServiceContext) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var input types.TaskListRequest
+		if err := c.ShouldBindQuery(&input); err != nil {
+			abort(c, errno.InvalidArgument("历史结果分页参数无效"))
+			return
+		}
+		result, err := service.NewTaskService(svcCtx).List(input)
+		if err != nil {
+			abort(c, err)
+			return
+		}
+		resp.OK(c, result)
+	}
+}
+
 func RetryTask(svcCtx *svc.ServiceContext) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		result, err := service.NewTaskService(svcCtx).Retry(c.Param("taskID"))

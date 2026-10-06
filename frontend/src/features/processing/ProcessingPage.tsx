@@ -5,13 +5,12 @@ import { Button } from "../../components/ui/Button";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { StatusBadge } from "../../components/ui/StatusBadge";
 import { errorMessage } from "../../api/client";
-import { retryTask, toProcessedAsset, waitForTask } from "../../api/tasks";
+import { retryTask, waitForTask } from "../../api/tasks";
 import { usePicFlowStore } from "../../store/usePicFlowStore";
 
 export function ProcessingPage() {
   const navigate = useNavigate();
   const taskId = usePicFlowStore((state) => state.taskId);
-  const setOutputs = usePicFlowStore((state) => state.setOutputs);
   const [completed, setCompleted] = useState(0);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState("");
@@ -28,11 +27,10 @@ export function ProcessingPage() {
           setCompleted(current.completed_assets);
           setTotal(current.total_assets);
         });
-        const outputs = await Promise.all(task.outputs.filter((output) => output.type === "standardized").map(toProcessedAsset));
+        if (controller.signal.aborted) return;
         setCompleted(task.completed_assets);
         setTotal(task.total_assets);
-        setOutputs(outputs);
-        window.setTimeout(() => navigate("/results", { replace: true }), 350);
+        navigate(`/results?task=${encodeURIComponent(activeTaskId)}`, { replace: true });
       } catch (requestError) {
         if (requestError instanceof DOMException && requestError.name === "AbortError") return;
         setError(errorMessage(requestError));
@@ -40,7 +38,7 @@ export function ProcessingPage() {
     }
     void run();
     return () => controller.abort();
-  }, [navigate, retryVersion, setOutputs, taskId]);
+  }, [navigate, retryVersion, taskId]);
 
   if (!taskId) return <Navigate to="/" replace />;
   const percent = total > 0 ? Math.round((completed / total) * 100) : 0;

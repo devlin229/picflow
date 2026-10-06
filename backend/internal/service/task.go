@@ -47,7 +47,7 @@ func (s *TaskService) Create(files []*multipart.FileHeader, request types.Proces
 		return nil, err
 	}
 	if config.AIBackground && s.svcCtx.ImageEditor == nil {
-		return nil, errno.Unavailable(fmt.Errorf("AI 换背景尚未配置，请在后端设置 LLM_API_KEY"))
+		return nil, errno.Unavailable(fmt.Errorf("AI 图片处理尚未配置，请在后端设置 LLM_API_KEY"))
 	}
 	configJSON, err := json.Marshal(config)
 	if err != nil {
@@ -93,6 +93,28 @@ func (s *TaskService) Get(taskID string) (*types.TaskResponse, error) {
 		return nil, errno.Internal(err)
 	}
 	return taskResponse(task), nil
+}
+
+// List 查询已保存的历史任务，不重新处理图片或调用模型。
+func (s *TaskService) List(input types.TaskListRequest) (*types.TaskListResponse, error) {
+	if input.Page == 0 {
+		input.Page = 1
+	}
+	if input.PageSize == 0 {
+		input.PageSize = 12
+	}
+	if input.Page < 1 || input.Page > 1000000 || input.PageSize < 1 || input.PageSize > 50 {
+		return nil, errno.InvalidArgument("页码须为 1 至 1000000，每页数量须为 1 至 50")
+	}
+	tasks, total, page, err := s.svcCtx.Tasks.List(input.Page, input.PageSize)
+	if err != nil {
+		return nil, errno.Internal(err)
+	}
+	items := make([]*types.TaskResponse, 0, len(tasks))
+	for i := range tasks {
+		items = append(items, taskResponse(&tasks[i]))
+	}
+	return &types.TaskListResponse{Items: items, Total: total, Page: page, PageSize: input.PageSize}, nil
 }
 
 // Retry 重新把失败任务放入处理队列，不重复上传原图。
@@ -430,9 +452,6 @@ func (s *TaskService) saveAsset(taskID string, header *multipart.FileHeader) (*m
 }
 
 func validateProcessConfig(request types.ProcessConfigRequest) (imageproc.ProcessConfig, error) {
-	if request.AIBackground {
-		request.Background, request.AIBackgroundPrompt = imageproc.ResolveAIBackground(request.Background, request.AIBackgroundPrompt)
-	}
 	if request.CanvasWidth < 64 || request.CanvasWidth > 4096 || request.CanvasHeight < 64 || request.CanvasHeight > 4096 {
 		return imageproc.ProcessConfig{}, errno.InvalidArgument("画布宽高必须在 64 到 4096 像素之间")
 	}
@@ -472,29 +491,19 @@ func validateProcessConfig(request types.ProcessConfigRequest) (imageproc.Proces
 	if quality < 30 || quality > 100 {
 		return imageproc.ProcessConfig{}, errno.InvalidArgument("输出质量必须在 30 到 100 之间")
 	}
-	tolerance := request.BackgroundTolerance
-	if tolerance == 0 {
-		tolerance = 12
-	}
-	if request.ReplaceSimpleBackground && (tolerance < 2 || tolerance > 30) {
-		return imageproc.ProcessConfig{}, errno.InvalidArgument("背景颜色容差必须在 2% 到 30% 之间")
-	}
 	config := imageproc.ProcessConfig{
 		CanvasWidth: request.CanvasWidth, CanvasHeight: request.CanvasHeight, Background: request.Background,
 		LayoutMode: layoutMode, KeepSubjectComplete: layoutMode == "contain",
 		OutputFormat: request.OutputFormat, MarginMode: marginMode, Margin: margin,
-		OutputQuality: quality, ReplaceSimpleBackground: request.ReplaceSimpleBackground, BackgroundTolerance: tolerance,
-		AIBackground: request.AIBackground, AIBackgroundPrompt: strings.TrimSpace(request.AIBackgroundPrompt),
+		OutputQuality: quality,
+		AIBackground:  strings.TrimSpace(request.AIBackgroundPrompt) != "", AIBackgroundPrompt: strings.TrimSpace(request.AIBackgroundPrompt),
 	}
-	if request.AIBackground {
+	if config.AIBackground {
 		if request.Background == "transparent" {
-			return imageproc.ProcessConfig{}, errno.InvalidArgument("当前 AI 换背景不支持透明底")
-		}
-		if request.ReplaceSimpleBackground {
-			return imageproc.ProcessConfig{}, errno.InvalidArgument("AI 换背景不能同时开启本地背景替换")
+			return imageproc.ProcessConfig{}, errno.InvalidArgument("当前 AI 图片处理不支持透明底")
 		}
 		if utf8.RuneCountInString(config.AIBackgroundPrompt) > 1000 {
-			return imageproc.ProcessConfig{}, errno.InvalidArgument("背景描述不能超过 1000 字")
+			return imageproc.ProcessConfig{}, errno.InvalidArgument("AI 提示词不能超过 1000 字")
 		}
 	}
 	specification, err := normalizeTaskSpecification(request.Specification)

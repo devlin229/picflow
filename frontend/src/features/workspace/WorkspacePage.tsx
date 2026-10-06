@@ -3,15 +3,15 @@ import { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { useNavigate } from "react-router-dom";
 import { errorMessage } from "../../api/client";
-import { createTask, deleteTask } from "../../api/tasks";
+import { createTask } from "../../api/tasks";
 import { createTemplate } from "../../api/templates";
 import { ProcessingPreview } from "../../components/ProcessingPreview";
 import { Button } from "../../components/ui/Button";
 import { InputField, RangeField, SelectField } from "../../components/ui/Field";
 import { ImageCard } from "../../components/ui/ImageCard";
+import { Modal } from "../../components/ui/Modal";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { createImageAsset } from "../../lib/images";
-import { backgroundColorFromInstruction } from "../../lib/background";
 import { usePicFlowStore } from "../../store/usePicFlowStore";
 import type { ImageTemplate, LayoutMode, OutputFormat, SpecificationDisplayStyle, SpecificationTablePreset, SpecificationTableStyle, TaskSpecification } from "../../types";
 
@@ -27,7 +27,6 @@ export function WorkspacePage() {
   const assets = usePicFlowStore((state) => state.assets);
   const config = usePicFlowStore((state) => state.config);
   const templates = usePicFlowStore((state) => state.templates);
-  const taskId = usePicFlowStore((state) => state.taskId);
   const specificationDraft = usePicFlowStore((state) => state.specificationDraft);
   const specificationStyle = usePicFlowStore((state) => state.specificationStyleDraft);
   const specificationDisplayStyle = usePicFlowStore((state) => state.specificationDisplayStyle);
@@ -43,13 +42,14 @@ export function WorkspacePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [namingTemplate, setNamingTemplate] = useState(false);
+  const [templateName, setTemplateName] = useState("");
   const [previewAssetId, setPreviewAssetId] = useState("");
 
   const onDrop = useCallback(async (files: File[]) => {
     setLoading(true);
     setError("");
     try {
-      if (taskId) await deleteTask(taskId);
       const validFiles = files.filter((file) => ["image/jpeg", "image/png", "image/webp"].includes(file.type));
       const next = await Promise.all(validFiles.map(createImageAsset));
       setAssets([...assets, ...next]);
@@ -58,7 +58,7 @@ export function WorkspacePage() {
     } finally {
       setLoading(false);
     }
-  }, [assets, setAssets, taskId]);
+  }, [assets, setAssets]);
 
   const dropzone = useDropzone({
     onDrop,
@@ -114,7 +114,6 @@ export function WorkspacePage() {
   const removeAsset = async (assetId: string) => {
     setError("");
     try {
-      if (taskId) await deleteTask(taskId);
       const removed = assets.find((asset) => asset.id === assetId);
       if (removed) URL.revokeObjectURL(removed.url);
       const remainingAssets = assets.filter((asset) => asset.id !== assetId);
@@ -128,7 +127,6 @@ export function WorkspacePage() {
   const clearAssets = async () => {
     setError("");
     try {
-      if (taskId) await deleteTask(taskId);
       assets.forEach((asset) => URL.revokeObjectURL(asset.url));
       setAssets([]);
       setPreviewAssetId("");
@@ -139,7 +137,7 @@ export function WorkspacePage() {
 
   const startProcessing = async () => {
     if (config.aiBackground && config.background === "transparent") {
-      setError("当前 AI 换背景不支持透明底，请选择纯色背景");
+      setError("当前模板使用透明底，暂不支持 AI 图片处理，请换用非透明底模板");
       return;
     }
     if (specificationDisplayStyle === "simple-table" && !visibleSpecifications.length) {
@@ -161,13 +159,20 @@ export function WorkspacePage() {
   };
 
   const saveTemplate = async () => {
+    if (submitting) return;
+    const name = templateName.trim();
+    if (!name) {
+      setError("请输入模板名称");
+      return;
+    }
     setSubmitting(true);
     setError("");
     try {
-      const name = `${config.width}×${config.height} 自定义模板`;
       const template = await createTemplate(name, `${config.width} × ${config.height} · ${config.format.toUpperCase()}`, config);
       addTemplate(template);
       setConfig({ templateId: template.id, template: template.name });
+      setNamingTemplate(false);
+      setTemplateName("");
     } catch (requestError) {
       setError(errorMessage(requestError));
     } finally {
@@ -255,15 +260,6 @@ export function WorkspacePage() {
             <option value="cover-top">填满画布 · 顶部对齐</option>
             <option value="cover-bottom">填满画布 · 底部对齐</option>
           </SelectField>
-          <SelectField label="背景" value={config.background === "transparent" ? "transparent" : config.background.toUpperCase() === "#FFFFFF" ? "white" : config.background.toUpperCase() === "#000000" ? "black" : "custom"} onChange={(event) => {
-            if (event.target.value === "white") setCustomConfig({ background: "#FFFFFF" });
-            if (event.target.value === "black") setCustomConfig({ background: "#000000" });
-            if (event.target.value === "transparent") setCustomConfig({ background: "transparent", format: config.format === "jpeg" ? "png" : config.format });
-            if (event.target.value === "custom" && ["TRANSPARENT", "#FFFFFF", "#000000"].includes(config.background.toUpperCase())) setCustomConfig({ background: "#F3F4F6" });
-          }}>
-            <option value="white">白底</option><option value="black">黑底</option><option value="transparent">透明底</option><option value="custom">自定义纯色</option>
-          </SelectField>
-          {config.background !== "transparent" && !["#FFFFFF", "#000000"].includes(config.background.toUpperCase()) && <InputField label="自定义背景色" type="color" value={config.background} onChange={(event) => setCustomConfig({ background: event.target.value.toUpperCase() })} />}
           {config.layoutMode === "contain" && <>
             <SelectField label="边距" value={config.marginMode} onChange={(event) => setCustomConfig({ marginMode: event.target.value as "auto" | "fixed" })}>
               <option value="auto">自动边距</option><option value="fixed">固定像素</option>
@@ -278,26 +274,10 @@ export function WorkspacePage() {
           </SelectField>
           {config.format === "jpeg" && <RangeField label={`JPG 压缩质量（${config.quality}%）`} min={30} max={100} value={config.quality} onValueChange={(quality) => setCustomConfig({ quality })} />}
           <div className="settings-section-heading">
-            <div><strong>原背景处理</strong></div>
+            <div><strong>AI 图片处理</strong></div>
           </div>
-          <SelectField label="背景处理方式" value={config.aiBackground ? "ai" : "local"} onChange={(event) => setCustomConfig({ aiBackground: event.target.value === "ai", replaceSimpleBackground: false })}>
-            <option value="local">本地处理</option><option value="ai">AI 换背景</option>
-          </SelectField>
-          {config.aiBackground && <>
-            <InputField label="场景描述或换色指令（可选）" maxLength={1000} placeholder="例如：换成黑色；留空使用上方背景颜色" value={config.aiBackgroundPrompt} onChange={(event) => {
-              const prompt = event.target.value;
-              const color = backgroundColorFromInstruction(prompt);
-              setCustomConfig({ aiBackgroundPrompt: prompt, ...(color ? { background: color } : {}) });
-            }} />
-            <small className="field-note">纯色换背景请在上方选择颜色，或输入“换成黑色”等明确指令。图片发送至模型服务并按张计费，实际效果处理后查看。当前不支持透明底。</small>
-          </>}
-          {!config.aiBackground && <>
-          <label className="check-field">
-            <input type="checkbox" checked={config.replaceSimpleBackground} onChange={(event) => setCustomConfig({ replaceSimpleBackground: event.target.checked })} />
-            <span><strong>替换原图的单一背景</strong><small>从图片边缘识别连通的近似纯色区域，并替换为上方选择的背景。</small></span>
-          </label>
-          {config.replaceSimpleBackground && <RangeField label={`颜色容差（${config.backgroundTolerance}%）`} help="背景有轻微阴影时可提高；商品颜色接近背景时应降低。" min={2} max={30} value={config.backgroundTolerance} onValueChange={(backgroundTolerance) => setCustomConfig({ backgroundTolerance })} />}
-          </>}
+          <InputField label="提示词（可选）" maxLength={1000} placeholder="输入提示词让 AI 处理图片，留空不使用 AI" value={config.aiBackgroundPrompt} onChange={(event) => setCustomConfig({ aiBackgroundPrompt: event.target.value, aiBackground: Boolean(event.target.value.trim()) })} />
+          {config.aiBackground && <small className="field-note">图片将发送至模型服务并按张计费，实际效果处理后查看。当前不支持透明底。</small>}
           <SelectField label="规格展示样式" value={specificationDisplayStyle} onChange={(event) => setSpecificationDisplayStyle(event.target.value as SpecificationDisplayStyle)}>
             <option value="none">不添加规格</option>
             <option value="simple-table">参数表格</option>
@@ -330,11 +310,21 @@ export function WorkspacePage() {
             {specificationStyle.backgroundColor !== "transparent" && <InputField label="自定义背景色" type="color" value={specificationStyle.backgroundColor} onChange={(event) => updateSpecificationStyle({ backgroundColor: event.target.value.toUpperCase() })} />}
           </div>
           </>}
+          <Modal open={namingTemplate} title="保存为模板" busy={submitting} onClose={() => { setNamingTemplate(false); setTemplateName(""); setError(""); }}>
+          <form noValidate onSubmit={(event) => { event.preventDefault(); void saveTemplate(); }}>
+            <InputField label="模板名称" placeholder="请输入模板名称" maxLength={80} autoFocus disabled={submitting} value={templateName} onChange={(event) => setTemplateName(event.target.value)} />
+            {error && <p className="form-error" role="alert">{error}</p>}
+            <div className="settings-actions">
+              <Button type="button" variant="secondary" disabled={submitting} onClick={() => { setNamingTemplate(false); setTemplateName(""); setError(""); }}>取消</Button>
+              <Button type="submit" disabled={submitting}>{submitting ? "保存中…" : "保存模板"}</Button>
+            </div>
+          </form>
+          </Modal>
           <div className="settings-actions">
-            <Button variant="secondary" disabled={submitting} onClick={saveTemplate}>保存为模板</Button>
+            <Button variant="secondary" disabled={submitting} onClick={() => { setNamingTemplate(true); setError(""); }}>保存为模板</Button>
             <Button disabled={submitting} onClick={startProcessing}>{submitting ? "提交中…" : "开始处理"}</Button>
           </div>
-          {error && <p className="form-error" role="alert">{error}</p>}
+          {error && !namingTemplate && <p className="form-error" role="alert">{error}</p>}
         </aside>
       </div>
     </section>

@@ -17,6 +17,23 @@ paths:
       responses:
         "200": {description: 数据库可用}
   /api/tasks:
+    get:
+      summary: 分页查询历史处理任务
+      description: 按创建时间倒序返回任务及原图、输出元数据，不重新处理或调用模型。页码超出最后一页时返回最后一页。
+      parameters:
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 1000000, default: 1}
+        - name: page_size
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 50, default: 12}
+      responses:
+        "200":
+          description: 历史任务分页结果
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/TaskListEnvelope"}
+        "400": {$ref: "#/components/responses/BadRequest"}
     post:
       summary: 上传图片并创建标准化任务
       requestBody:
@@ -146,7 +163,7 @@ paths:
               schema: {$ref: "#/components/schemas/TemplateEnvelope"}
   /api/templates/{templateID}:
     delete:
-      summary: 删除自定义模板
+      summary: 删除用户自建模板（服务不再提供预置模板）
       parameters:
         - name: templateID
           in: path
@@ -183,7 +200,7 @@ components:
         data: {}
     ProcessConfig:
       type: object
-      required: [canvas_width, canvas_height, background, layout_mode, keep_subject_complete, output_format, margin_mode, margin, output_quality, replace_simple_background, background_tolerance]
+      required: [canvas_width, canvas_height, background, layout_mode, keep_subject_complete, output_format, margin_mode, margin, output_quality]
       properties:
         template_id: {type: string}
         canvas_width: {type: integer, minimum: 64, maximum: 4096}
@@ -195,10 +212,8 @@ components:
         margin_mode: {type: string, enum: [auto, fixed]}
         margin: {type: integer, minimum: 0}
         output_quality: {type: integer, minimum: 30, maximum: 100, description: 当前用于 JPG 有损压缩}
-        replace_simple_background: {type: boolean, description: 是否移除从边缘连通的透明或近似纯色背景}
-        background_tolerance: {type: integer, minimum: 2, maximum: 30, description: 单一背景颜色容差百分比}
-        ai_background: {type: boolean, default: false, description: 调用后端配置的图片编辑模型移除原背景并换色或生成场景，与本地背景替换互斥，不支持透明底}
-        ai_background_prompt: {type: string, maxLength: 1000, description: AI 场景描述或换色指令，留空使用 background 指定的纯色；明确换色指令同步画布颜色并进行背景边缘初步校验；AI 原图不得超过 10MB}
+        ai_background: {type: boolean, default: false, description: 兼容字段，实际是否调用 AI 由去除首尾空白后的 ai_background_prompt 是否非空决定；先完成本地尺寸裁剪补边及规格绘制，再交给模型；返回后无补边收口目标尺寸和编码，不支持透明底}
+        ai_background_prompt: {type: string, maxLength: 1000, description: AI 图片编辑提示词，留空不调用模型；支持换背景及其他编辑指令，不强制限制为背景修改；与 background 画布颜色独立，不改写画布设置，不判断 AI 效果达标；原图不得超过 10MB}
         specification:
           allOf:
             - {$ref: "#/components/schemas/TaskSpecification"}
@@ -265,6 +280,22 @@ components:
         code: {type: integer, const: 0}
         msg: {type: string}
         data: {$ref: "#/components/schemas/Task"}
+    TaskListEnvelope:
+      type: object
+      required: [code, msg, data]
+      properties:
+        code: {type: integer, const: 0}
+        msg: {type: string}
+        data:
+          type: object
+          required: [items, total, page, page_size]
+          properties:
+            items:
+              type: array
+              items: {$ref: "#/components/schemas/Task"}
+            total: {type: integer, format: int64, minimum: 0}
+            page: {type: integer, minimum: 1}
+            page_size: {type: integer, minimum: 1, maximum: 50}
     OutputEnvelope:
       type: object
       required: [code, msg, data]

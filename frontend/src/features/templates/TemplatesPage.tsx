@@ -60,6 +60,7 @@ export function TemplatesPage() {
         <div className="settings-actions"><Button variant="secondary" onClick={() => setCreating(false)}>取消</Button><Button disabled={loading} onClick={() => void create()}>{loading ? "保存中…" : "保存模板"}</Button></div>
       </section>}
       <div className="template-grid">
+        {!templates.some((template) => template.type === "main") && <p className="field-note">暂无模板，可点击“新建模板”或在工作台保存当前配置。</p>}
         {templates.filter((template) => template.type === "main").map((template) => (
           <article className="panel template-card" key={template.id}>
             <span>图片处理模板</span>

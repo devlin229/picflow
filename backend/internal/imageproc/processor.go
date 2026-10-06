@@ -25,20 +25,18 @@ import (
 
 // ProcessConfig 描述规则型图片处理参数。
 type ProcessConfig struct {
-	CanvasWidth             int                  `json:"canvas_width"`
-	CanvasHeight            int                  `json:"canvas_height"`
-	Background              string               `json:"background"`
-	LayoutMode              string               `json:"layout_mode"`
-	KeepSubjectComplete     bool                 `json:"keep_subject_complete"`
-	OutputFormat            string               `json:"output_format"`
-	MarginMode              string               `json:"margin_mode"`
-	Margin                  int                  `json:"margin"`
-	OutputQuality           int                  `json:"output_quality"`
-	ReplaceSimpleBackground bool                 `json:"replace_simple_background"`
-	BackgroundTolerance     int                  `json:"background_tolerance"`
-	AIBackground            bool                 `json:"ai_background"`
-	AIBackgroundPrompt      string               `json:"ai_background_prompt"`
-	Specification           *SpecificationConfig `json:"specification,omitempty"`
+	CanvasWidth         int                  `json:"canvas_width"`
+	CanvasHeight        int                  `json:"canvas_height"`
+	Background          string               `json:"background"`
+	LayoutMode          string               `json:"layout_mode"`
+	KeepSubjectComplete bool                 `json:"keep_subject_complete"`
+	OutputFormat        string               `json:"output_format"`
+	MarginMode          string               `json:"margin_mode"`
+	Margin              int                  `json:"margin"`
+	OutputQuality       int                  `json:"output_quality"`
+	AIBackground        bool                 `json:"ai_background"`
+	AIBackgroundPrompt  string               `json:"ai_background_prompt"`
+	Specification       *SpecificationConfig `json:"specification,omitempty"`
 }
 
 // Specification 描述规格表格中的一行参数。
@@ -98,9 +96,6 @@ func Standardize(sourcePath, outputPath string, config ProcessConfig) error {
 	source, err := decode(sourcePath)
 	if err != nil {
 		return err
-	}
-	if config.ReplaceSimpleBackground {
-		source = removeConnectedBackground(source, config.BackgroundTolerance)
 	}
 	canvas, err := compose(source, config)
 	if err != nil {
@@ -267,93 +262,6 @@ func encode(path string, value image.Image, format string, quality int) error {
 		return fmt.Errorf("编码输出图片失败: %w", err)
 	}
 	return nil
-}
-
-func removeConnectedBackground(source image.Image, tolerance int) *image.NRGBA {
-	bounds := source.Bounds()
-	width, height := bounds.Dx(), bounds.Dy()
-	value := image.NewNRGBA(image.Rect(0, 0, width, height))
-	draw.Draw(value, value.Bounds(), source, bounds.Min, draw.Src)
-	if width == 0 || height == 0 {
-		return value
-	}
-	threshold := tolerance * 255 / 100
-	if threshold < 1 {
-		threshold = 1
-	}
-	corners := []color.NRGBA{
-		value.NRGBAAt(0, 0), value.NRGBAAt(width-1, 0),
-		value.NRGBAAt(0, height-1), value.NRGBAAt(width-1, height-1),
-	}
-	reference := corners[0]
-	bestScore := -1
-	for _, candidate := range corners {
-		score := 0
-		for _, sample := range corners {
-			if similarColor(sample, candidate, threshold) {
-				score++
-			}
-		}
-		if score > bestScore {
-			bestScore = score
-			reference = candidate
-		}
-	}
-	visited := make([]byte, (width*height+7)/8)
-	queue := make([]uint32, 0, width*2+height*2)
-	enqueue := func(x, y int) {
-		index := y*width + x
-		mask := byte(1 << uint(index&7))
-		if visited[index>>3]&mask != 0 {
-			return
-		}
-		visited[index>>3] |= mask
-		pixel := value.NRGBAAt(x, y)
-		if pixel.A < 250 || similarColor(pixel, reference, threshold) {
-			queue = append(queue, uint32(index))
-		}
-	}
-	for x := 0; x < width; x++ {
-		enqueue(x, 0)
-		enqueue(x, height-1)
-	}
-	for y := 1; y < height-1; y++ {
-		enqueue(0, y)
-		enqueue(width-1, y)
-	}
-	for cursor := 0; cursor < len(queue); cursor++ {
-		index := int(queue[cursor])
-		x, y := index%width, index/width
-		pixel := value.NRGBAAt(x, y)
-		pixel.A = 0
-		value.SetNRGBA(x, y, pixel)
-		if x > 0 {
-			enqueue(x-1, y)
-		}
-		if x+1 < width {
-			enqueue(x+1, y)
-		}
-		if y > 0 {
-			enqueue(x, y-1)
-		}
-		if y+1 < height {
-			enqueue(x, y+1)
-		}
-	}
-	return value
-}
-
-func similarColor(left, right color.NRGBA, tolerance int) bool {
-	return absInt(int(left.R)-int(right.R)) <= tolerance &&
-		absInt(int(left.G)-int(right.G)) <= tolerance &&
-		absInt(int(left.B)-int(right.B)) <= tolerance
-}
-
-func absInt(value int) int {
-	if value < 0 {
-		return -value
-	}
-	return value
 }
 
 func parseBackground(value string) (color.NRGBA, error) {
